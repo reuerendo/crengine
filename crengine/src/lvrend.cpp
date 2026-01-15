@@ -7750,8 +7750,15 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
 			int max_content_width = 0;
 			int min_content_width = 0;
 			int rend_flags = flags | BLOCK_RENDERING_ENSURE_STYLE_WIDTH | BLOCK_RENDERING_ALLOW_STYLE_W_H_ABSOLUTE_UNITS;
+			// getRenderedWidths() returns width including padding/margin of children,
+			// but we need to ignore margin of this element itself (ignoreMargin=true)
+			// Note: getRenderedWidths() already includes padding/margin/border of children
 			getRenderedWidths(enode, max_content_width, min_content_width, direction, true, rend_flags);
 			
+			// getRenderedWidths() returns the content width including padding/margin/border
+			// of children, but for fit-content we want the shrink-to-fit width.
+			// The returned max_content_width should be the width needed by the content.
+			// We need to ensure it doesn't exceed available width (container minus our margins).
 			int available_width = container_width - margin_left - margin_right;
 			
 			// Use the maximum of content width, but not exceeding available width
@@ -11699,7 +11706,10 @@ void getRenderedWidths(ldomNode * node, int &maxWidth, int &minWidth, int direct
         bool is_boxing_elem = nodeElementId <= EL_BOXING_END && nodeElementId >= EL_BOXING_START;
         bool use_style_width = false;
         css_length_t style_width = style->width;
-        if ( BLOCK_RENDERING(rendFlags, ENSURE_STYLE_WIDTH) ) {
+        // Check for fit-content: treat as shrink-to-content width (don't use fixed width)
+        bool has_fit_content_width = (style_width.type == css_val_unspecified && 
+                                      style_width.value == css_generic_fit_content);
+        if ( BLOCK_RENDERING(rendFlags, ENSURE_STYLE_WIDTH) && !has_fit_content_width ) {
             // Ignore width for table sub-elements - but allow it for our boxing elements, as we can set it
             // for some explicit rendering purpose (i.e. for the MathML <msqrt> mathBox root symbol)
             if ( style->display <= css_d_table || is_boxing_elem ) {
