@@ -7744,17 +7744,24 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
         // Check for fit-content: treat as shrink-to-content width
         bool has_fit_content_width = (style_width.type == css_val_unspecified && 
                                       style_width.value == css_generic_fit_content);
+        // DEBUG
+        if ( has_fit_content_width ) {
+            printf("DEBUG: fit-content detected! node id=%d, tag=%s\n", enode->getNodeId(), enode->getNodeName());
+        }
         // For fit-content, we need to get the content width similar to floats
         if ( has_fit_content_width ) {
             int max_content_width = 0;
             int min_content_width = 0;
             int rend_flags = flags | BLOCK_RENDERING_ENSURE_STYLE_WIDTH | BLOCK_RENDERING_ALLOW_STYLE_W_H_ABSOLUTE_UNITS;
             getRenderedWidths(enode, max_content_width, min_content_width, direction, true, rend_flags);
+            printf("DEBUG: fit-content widths: max=%d, min=%d, container=%d\n", max_content_width, min_content_width, container_width);
             // Use the max content width but limit to container width
             if (max_content_width + margin_left + margin_right < container_width) {
                 width = max_content_width + margin_left + margin_right;
+                printf("DEBUG: fit-content using content width: %d\n", width);
             } else {
                 width = container_width;
+                printf("DEBUG: fit-content clamped to container: %d\n", width);
             }
             auto_width = false; // We've set a specific width
         }
