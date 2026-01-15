@@ -7809,7 +7809,31 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
             }
             // printf("  apply_style_width => %d\n", width);
         }
-        else if ( !has_fit_content_width ) {
+        else if ( has_fit_content_width ) {
+            // fit-content = min(max-content, max(min-content, available-space))
+            // Get content-based sizing
+            int min_content_width = 0;
+            int max_content_width = 0;
+            getRenderedWidths(enode, min_content_width, max_content_width);
+            
+            int available_space = container_width - margin_left - margin_right;
+            
+            // Apply fit-content formula: min(max-content, max(min-content, available-space))
+            // First compute inner: max(min-content, available-space)
+            int inner_width = available_space;
+            if ( inner_width < min_content_width ) {
+                inner_width = min_content_width;
+            }
+            
+            // Then compute result: min(max-content, inner)
+            width = max_content_width;
+            if ( width > inner_width ) {
+                width = inner_width;
+            }
+            
+            auto_width = false; // We've set width explicitly
+        }
+        else {
             width = container_width - margin_left - margin_right;
             auto_width = true; // no more width tweaks
         }
