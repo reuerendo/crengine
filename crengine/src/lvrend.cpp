@@ -7740,6 +7740,7 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
     }
     else { // regular element (non-float)
         bool apply_style_width = false;
+        bool is_fit_content = false;  // Track if we're using fit-content
         css_length_t style_width = style->width;
         // Check for fit-content: treat as shrink-to-content width
         bool has_fit_content_width = (style_width.type == css_val_unspecified && 
@@ -7751,16 +7752,16 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
 			int rend_flags = flags | BLOCK_RENDERING_ENSURE_STYLE_WIDTH | BLOCK_RENDERING_ALLOW_STYLE_W_H_ABSOLUTE_UNITS;
 			getRenderedWidths(enode, max_content_width, min_content_width, direction, true, rend_flags);
 			
-			
 			int available_width = container_width - margin_left - margin_right;
 			
+			// Use the maximum of content width, but not exceeding available width
 			width = max_content_width;
-			
 			if (width > available_width) {
 				width = available_width;
 			}
 			
-			auto_width = false; 
+			auto_width = false;
+			is_fit_content = true;
 		}
         // table sub-elements widths are managed by the table layout algorithm
         // (but trust width if the table sub element is one of our boxing elements)
@@ -7813,7 +7814,8 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
             }
             // printf("  apply_style_width => %d\n", width);
         }
-        else {
+        else if ( !is_fit_content ) {
+            // Only set auto width if we're not already processing fit-content
             width = container_width - margin_left - margin_right;
             auto_width = true; // no more width tweaks
         }
