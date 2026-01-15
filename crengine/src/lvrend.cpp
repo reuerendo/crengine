@@ -7464,7 +7464,10 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
         // We always use the style height for <HR>, to actually have a height to fill
         // with its color (as some of our css files render them via height)
         css_length_t style_height = style->height;
-        if ( is_empty_line_elem && style_height.type == css_val_unspecified ) {
+        // Check for fit-content in height: treat as auto (no fixed height)
+        bool height_fit_content = (style_height.type == css_val_unspecified && 
+                                   style_height.value == css_generic_fit_content);
+        if ( is_empty_line_elem && style_height.type == css_val_unspecified && !height_fit_content ) {
             // No height specified: default to line-height, just like
             // if it were rendered final.
             int line_h;
@@ -7488,7 +7491,8 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
             style_height.type = css_val_screen_px;
         }
         // We don't have a container height to apply heights in %, so ignore them
-        if ( style_height.type != css_val_unspecified && style_height.type != css_val_percent ) {
+        // Also ignore fit-content in height
+        if ( style_height.type != css_val_unspecified && style_height.type != css_val_percent && !height_fit_content ) {
             if ( BLOCK_RENDERING(flags, ALLOW_STYLE_W_H_ABSOLUTE_UNITS) ||
                  style_height.type == css_val_screen_px ||
                  is_length_relative_unit(style_height.type) ||
@@ -7506,8 +7510,12 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
         }
         // Note: we'll always use the height needed to show this block content without overflowing
         css_length_t style_max_height = style->max_height;
+        // Check for fit-content in max-height: treat as no limit (ignore)
+        bool max_height_fit_content = (style_max_height.type == css_val_unspecified && 
+                                       style_max_height.value == css_generic_fit_content);
         if ( style_max_height.type != css_val_unspecified &&
              style_max_height.type != css_val_percent &&
+             !max_height_fit_content &&
              BLOCK_RENDERING(flags, ENSURE_STYLE_HEIGHT) ) {
             if ( BLOCK_RENDERING(flags, ALLOW_STYLE_W_H_ABSOLUTE_UNITS) ||
                  style_max_height.type == css_val_screen_px ||
@@ -7522,8 +7530,12 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
             }
         }
         css_length_t style_min_height = style->min_height;
+        // Check for fit-content in min-height: treat as 0 (no minimum)
+        bool min_height_fit_content = (style_min_height.type == css_val_unspecified && 
+                                       style_min_height.value == css_generic_fit_content);
         if ( style_min_height.type != css_val_unspecified &&
              style_min_height.type != css_val_percent &&
+             !min_height_fit_content &&
              BLOCK_RENDERING(flags, ENSURE_STYLE_HEIGHT) ) {
             if ( BLOCK_RENDERING(flags, ALLOW_STYLE_W_H_ABSOLUTE_UNITS) ||
                  style_min_height.type == css_val_screen_px ||
@@ -7734,12 +7746,15 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
     else { // regular element (non-float)
         bool apply_style_width = false;
         css_length_t style_width = style->width;
+        // Check for fit-content: treat as auto (full container width)
+        bool has_fit_content_width = (style_width.type == css_val_unspecified && 
+                                      style_width.value == css_generic_fit_content);
         // table sub-elements widths are managed by the table layout algorithm
         // (but trust width if the table sub element is one of our boxing elements)
         if ( style->display <= css_d_table || is_boxing_elem ) {
             // Only if ENSURE_STYLE_WIDTH as we may prefer having
             // full width text blocks to not waste reading width with blank areas.
-            if ( style_width.type != css_val_unspecified ) {
+            if ( style_width.type != css_val_unspecified && !has_fit_content_width ) {
                 if ( BLOCK_RENDERING(flags, ENSURE_STYLE_WIDTH) &&
                      ( BLOCK_RENDERING(flags, ALLOW_STYLE_W_H_ABSOLUTE_UNITS) ||
                        style_width.type == css_val_screen_px || // in case it was converted to screen_px beforehand
@@ -7796,7 +7811,10 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
             // this is ensured naturally by the inner content measurement)
             // We do max-width first, and then min-width (https://www.w3.org/TR/CSS2/visudet.html#min-max-widths)
             css_length_t style_max_width = style->max_width;
-            if ( style_max_width.type != css_val_unspecified ) {
+            // Check for fit-content in max-width: treat as no limit (ignore)
+            bool max_width_fit_content = (style_max_width.type == css_val_unspecified && 
+                                          style_max_width.value == css_generic_fit_content);
+            if ( style_max_width.type != css_val_unspecified && !max_width_fit_content ) {
                 if ( BLOCK_RENDERING(flags, ALLOW_STYLE_W_H_ABSOLUTE_UNITS) ||
                      style_max_width.type == css_val_screen_px || // in case it was converted to screen_px beforehand
                      is_length_relative_unit(style_max_width.type) ) {
@@ -7810,7 +7828,10 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
                 }
             }
             css_length_t style_min_width = style->min_width;
-            if ( style_min_width.type != css_val_unspecified ) {
+            // Check for fit-content in min-width: treat as 0 (no minimum)
+            bool min_width_fit_content = (style_min_width.type == css_val_unspecified && 
+                                          style_min_width.value == css_generic_fit_content);
+            if ( style_min_width.type != css_val_unspecified && !min_width_fit_content ) {
                 if ( BLOCK_RENDERING(flags, ALLOW_STYLE_W_H_ABSOLUTE_UNITS) ||
                      style_min_width.type == css_val_screen_px || // in case it was converted to screen_px beforehand
                      is_length_relative_unit(style_min_width.type) ) {
