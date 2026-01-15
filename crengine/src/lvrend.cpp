@@ -7744,27 +7744,24 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
         // Check for fit-content: treat as shrink-to-content width
         bool has_fit_content_width = (style_width.type == css_val_unspecified && 
                                       style_width.value == css_generic_fit_content);
-        // DEBUG
-        if ( has_fit_content_width ) {
-            printf("DEBUG: fit-content detected! node id=%d, tag=%s\n", enode->getNodeId(), enode->getNodeName());
-        }
-        // For fit-content, we need to get the content width similar to floats
-        if ( has_fit_content_width ) {
-            int max_content_width = 0;
-            int min_content_width = 0;
-            int rend_flags = flags | BLOCK_RENDERING_ENSURE_STYLE_WIDTH | BLOCK_RENDERING_ALLOW_STYLE_W_H_ABSOLUTE_UNITS;
-            getRenderedWidths(enode, max_content_width, min_content_width, direction, true, rend_flags);
-            printf("DEBUG: fit-content widths: max=%d, min=%d, container=%d\n", max_content_width, min_content_width, container_width);
-            // Use the max content width but limit to container width
-            if (max_content_width + margin_left + margin_right < container_width) {
-                width = max_content_width + margin_left + margin_right;
-                printf("DEBUG: fit-content using content width: %d\n", width);
-            } else {
-                width = container_width;
-                printf("DEBUG: fit-content clamped to container: %d\n", width);
-            }
-            auto_width = false; // We've set a specific width
-        }
+		// For fit-content, we need to get the content width similar to floats
+		if ( has_fit_content_width ) {
+			int max_content_width = 0;
+			int min_content_width = 0;
+			int rend_flags = flags | BLOCK_RENDERING_ENSURE_STYLE_WIDTH | BLOCK_RENDERING_ALLOW_STYLE_W_H_ABSOLUTE_UNITS;
+			getRenderedWidths(enode, max_content_width, min_content_width, direction, true, rend_flags);
+			
+			
+			int available_width = container_width - margin_left - margin_right;
+			
+			width = max_content_width;
+			
+			if (width > available_width) {
+				width = available_width;
+			}
+			
+			auto_width = false; 
+		}
         // table sub-elements widths are managed by the table layout algorithm
         // (but trust width if the table sub element is one of our boxing elements)
         else if ( style->display <= css_d_table || is_boxing_elem ) {
@@ -7815,30 +7812,6 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
                 width += padding_left + padding_right;
             }
             // printf("  apply_style_width => %d\n", width);
-        }
-        else if ( has_fit_content_width ) {
-            // fit-content = min(max-content, max(min-content, available-space))
-            // Get content-based sizing
-            int min_content_width = 0;
-            int max_content_width = 0;
-            getRenderedWidths(enode, min_content_width, max_content_width);
-            
-            int available_space = container_width - margin_left - margin_right;
-            
-            // Apply fit-content formula: min(max-content, max(min-content, available-space))
-            // First compute inner: max(min-content, available-space)
-            int inner_width = available_space;
-            if ( inner_width < min_content_width ) {
-                inner_width = min_content_width;
-            }
-            
-            // Then compute result: min(max-content, inner)
-            width = max_content_width;
-            if ( width > inner_width ) {
-                width = inner_width;
-            }
-            
-            auto_width = false; // We've set width explicitly
         }
         else {
             width = container_width - margin_left - margin_right;
