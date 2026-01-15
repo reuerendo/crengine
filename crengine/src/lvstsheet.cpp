@@ -4143,7 +4143,7 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                     css_length_t len[4];
                     int i;
                     for (i = 0; i < 4; i++) {
-                        if (parse_number_value( decl, len[i], accept_percent, accept_negative, accept_auto )) {
+                        if (parse_number_value( decl, len[i], accept_percent, accept_negative, accept_auto, false, false, false, false, false, false, false )) {
                             continue;
                         }
                         if (prop_code == cssd_border_width && parse_named_border_width( decl, len[i] )) {
