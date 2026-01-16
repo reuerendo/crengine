@@ -11502,8 +11502,6 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
         enode->ensurePseudoElement(false);
     if ( requires_pseudo_element_first_letter )
         enode->ensureFirstLetterPseudoElement();
-    else
-        enode->removeFirstLetterPseudoElement();
 
     // For debugging changes in display/white-space when comparing user-agent stylesheets
     // (which should be avoided to prevent the suggestion to reload the document)
