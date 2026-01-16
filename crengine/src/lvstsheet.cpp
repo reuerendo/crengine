@@ -1139,7 +1139,7 @@ standard_color_t standard_color_table[] = {
     {"darkgoldenrod",0xb8860b},
     {"darkgray",0xa9a9a9},
     {"darkgreen",0x006400},
-    {"darkgreyd",0xa9a9a9},
+    {"darkgrey",0xa9a9a9},
     {"darkkhaki",0xbdb76b},
     {"darkmagenta",0x8b008b},
     {"darkolivegreen",0x556b2f},
