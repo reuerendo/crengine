@@ -6410,21 +6410,61 @@ void ldomNode::ensureFirstLetterPseudoElement() {
     }
     if ( !textNode || charIndex < 0 )
         return;
+
     lString32 original = textNode->getText();
     if ( charIndex >= original.length() )
         return;
-    lChar32 firstChar = original[charIndex];
+
+    // Calculate the range to extract based on CSS ::first-letter rules
+    int i = charIndex;
+    int len = original.length();
+    
+    // 1. Scan prefix punctuation (include everything that is NOT space/alpha/digit)
+    while ( i < len ) {
+        int props = lGetCharProps(original[i]);
+        if ( (props & CH_PROP_ALPHA) || (props & CH_PROP_DIGIT) ) {
+            break; // Found the letter/digit
+        }
+        if ( props & CH_PROP_SPACE ) {
+            return; // Space after punctuation before any letter -> Abort (e.g. "- Example")
+        }
+        i++;
+    }
+
+    // If no letter or digit found, we cannot form a first-letter pseudo element
+    if ( i >= len ) 
+        return;
+
+    // 2. Consume the letter/digit
+    i++; 
+
+    // 3. Scan suffix punctuation (must be immediate, no spaces)
+    while ( i < len ) {
+        int props = lGetCharProps(original[i]);
+        // Stop at space or next alphanumeric char
+        if ( (props & CH_PROP_SPACE) || (props & CH_PROP_ALPHA) || (props & CH_PROP_DIGIT) ) {
+            break; 
+        }
+        i++;
+    }
+
+    int extractLen = i - charIndex;
+    if ( extractLen <= 0 )
+        return;
+
+    lString32 firstLetters = original.substr(charIndex, extractLen);
     lString32 remaining = original;
-    remaining.erase( charIndex, 1 );
+    remaining.erase( charIndex, extractLen );
     textNode->setText( remaining );
+
     if ( insertIndex < 0 )
         insertIndex = textNode->getNodeIndex();
+
     ldomNode * pseudo = insertChildElement( insertIndex, LXML_NS_NONE, el_pseudoElem );
-    lString32 firstLetter;
-    firstLetter << firstChar;
-    // pseudo->setAttributeValue(LXML_NS_NONE, attr_FirstLetter, firstLetter.c_str());
+    
+    // pseudo->setAttributeValue(LXML_NS_NONE, attr_FirstLetter, firstLetters.c_str());
     pseudo->setAttributeValue(LXML_NS_NONE, attr_InnerText, original.c_str());
-    pseudo->insertChildText( 0, firstLetter );
+    pseudo->insertChildText( 0, firstLetters );
     pseudo->initNodeStyle();
     pseudo->initNodeRendMethod();
 #endif
