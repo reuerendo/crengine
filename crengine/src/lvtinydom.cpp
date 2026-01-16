@@ -6424,7 +6424,6 @@ void ldomNode::ensureFirstLetterPseudoElement() {
     firstLetter << firstChar;
     pseudo->setAttributeValue(LXML_NS_NONE, attr_FirstLetter, firstLetter.c_str());
     pseudo->setAttributeValue(LXML_NS_NONE, attr_InnerText, original.c_str());
-    pseudo->insertChildText( 0, firstLetter );
     pseudo->initNodeStyle();
     pseudo->initNodeRendMethod();
 #endif
