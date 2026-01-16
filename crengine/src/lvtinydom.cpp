@@ -6463,35 +6463,35 @@ void ldomNode::ensureFirstLetterPseudoElement() {
     ldomNode * pseudo = insertChildElement( insertIndex, LXML_NS_NONE, el_pseudoElem );
     
     pseudo->setAttributeValue(LXML_NS_NONE, attr_FirstLetter, firstLetters.c_str());
-    pseudo->setAttributeValue(LXML_NS_NONE, attr_InnerText, original.c_str());
+    // pseudo->setAttributeValue(LXML_NS_NONE, attr_InnerText, original.c_str());
     // pseudo->insertChildText( 0, firstLetters );
     pseudo->initNodeStyle();
     pseudo->initNodeRendMethod();
 #endif
 }
 
-void ldomNode::removeFirstLetterPseudoElement() {
-#if BUILD_LITE!=1
-    int nb_children = getChildCount();
-    for ( int i=0; i<nb_children; i++ ) {
-        ldomNode * child = getChildNode(i);
-        if ( child && child->getNodeId() == el_pseudoElem && child->hasAttribute(attr_FirstLetter) ) {
-            lString32 original = child->getAttributeValue(attr_InnerText);
-            if ( !original.empty() ) {
-                for ( int j=i+1; j<nb_children; j++ ) {
-                    ldomNode * next = getChildNode(j);
-                    if ( next && next->isText() ) {
-                        next->setText( original );
-                        break;
-                    }
-                }
-            }
-            removeChildren(i, i);
-            break;
-        }
-    }
-#endif
-}
+// void ldomNode::removeFirstLetterPseudoElement() {
+// #if BUILD_LITE!=1
+    // int nb_children = getChildCount();
+    // for ( int i=0; i<nb_children; i++ ) {
+        // ldomNode * child = getChildNode(i);
+        // if ( child && child->getNodeId() == el_pseudoElem && child->hasAttribute(attr_FirstLetter) ) {
+            // lString32 original = child->getAttributeValue(attr_InnerText);
+            // if ( !original.empty() ) {
+                // for ( int j=i+1; j<nb_children; j++ ) {
+                    // ldomNode * next = getChildNode(j);
+                    // if ( next && next->isText() ) {
+                        // next->setText( original );
+                        // break;
+                    // }
+                // }
+            // }
+            // removeChildren(i, i);
+            // break;
+        // }
+    // }
+// #endif
+// }
 
 #if BUILD_LITE!=1
 static void resetRendMethodToInline( ldomNode * node )
