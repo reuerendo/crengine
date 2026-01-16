@@ -6462,9 +6462,9 @@ void ldomNode::ensureFirstLetterPseudoElement() {
 
     ldomNode * pseudo = insertChildElement( insertIndex, LXML_NS_NONE, el_pseudoElem );
     
-    // pseudo->setAttributeValue(LXML_NS_NONE, attr_FirstLetter, firstLetters.c_str());
+    pseudo->setAttributeValue(LXML_NS_NONE, attr_FirstLetter, firstLetters.c_str());
     pseudo->setAttributeValue(LXML_NS_NONE, attr_InnerText, original.c_str());
-    pseudo->insertChildText( 0, firstLetters );
+    /* pseudo->insertChildText( 0, firstLetters ); */
     pseudo->initNodeStyle();
     pseudo->initNodeRendMethod();
 #endif
