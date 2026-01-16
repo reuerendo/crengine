@@ -6094,7 +6094,6 @@ static bool isInlineNode( ldomNode * node )
     if ( node->isText() )
         return true;
     //int d = node->getStyle()->display;
-    //return ( d==css_d_inline || d==css_d_run_in );
     int m = node->getRendMethod();
     return m == erm_inline;
 }
@@ -6104,6 +6103,53 @@ static bool isFloatingNode( ldomNode * node )
     if ( node->isText() )
         return false;
     return node->getStyle()->float_ > css_f_none;
+}
+
+static bool isInlineBlockLikeNode( ldomNode * node )
+{
+    if ( !node->isElement() )
+        return false;
+    css_style_ref_t style = node->getStyle();
+    if ( style.isNull() )
+        return false;
+    return style->display == css_d_inline_block || style->display == css_d_inline_table;
+}
+
+static int findFirstLetterInInlineNode( ldomNode * node, ldomNode * &textNode, int &charIndex )
+{
+    int len = node->getChildCount();
+    for ( int i=0; i<len; i++ ) {
+        ldomNode * child = node->getChildNode(i);
+        if ( !child )
+            continue;
+        if ( child->isText() ) {
+            lString32 text = child->getText();
+            for ( int j=0; j<text.length(); j++ ) {
+                if ( !(lGetCharProps(text[j]) & CH_PROP_SPACE) ) {
+                    textNode = child;
+                    charIndex = j;
+                    return 1; // found
+                }
+            }
+            continue;
+        }
+        if ( !child->isElement() )
+            continue;
+        css_style_ref_t style = child->getStyle();
+        if ( !style.isNull() && (style->display == css_d_none || child->getRendMethod() == erm_invisible) ) {
+            continue;
+        }
+        if ( child->getNodeId() == el_br || child->isImage() || child->isBoxingInlineBox() || isInlineBlockLikeNode(child) ) {
+            return -1; // blocked by non-text inline content
+        }
+        if ( child->getRendMethod() != erm_inline ) {
+            return -1; // blocked by non-inline content
+        }
+        int res = findFirstLetterInInlineNode(child, textNode, charIndex);
+        if ( res != 0 )
+            return res;
+    }
+    return 0; // no text found
 }
 
 static bool isNotBoxWrappingNode( ldomNode * node )
@@ -6194,6 +6240,13 @@ void ldomElementWriter::onBodyEnter()
                         // We'll do that in onBodyExit() when called for
                         // this node.
                         _pseudoElementAfterChildIndex = i;
+                    }
+                    else if ( child->hasAttribute(attr_FirstLetter) ) {
+                        // The "FirstLetter" pseudo element needs to have its
+                        // style applied. As it has no children, we can also init
+                        // its rend method.
+                        child->initNodeStyle();
+                        child->initNodeRendMethod();
                     }
                 }
             }
@@ -6289,6 +6342,111 @@ void ldomNode::ensurePseudoElement( bool is_before ) {
         }
     }
 
+#endif
+}
+
+void ldomNode::ensureFirstLetterPseudoElement() {
+#if BUILD_LITE!=1
+    if ( getNodeId() == el_DocFragment || getNodeId() == el_html ) {
+        return;
+    }
+    if ( !isElement() )
+        return;
+    css_style_ref_t style = getStyle();
+    if ( style.isNull() || style->display <= css_d_inline || style->display == css_d_none ) {
+        return; // ::first-letter applies to block elements only
+    }
+    int nb_children = getChildCount();
+    for ( int i=0; i<nb_children; i++ ) {
+        ldomNode * child = getChildNode(i);
+        if ( child && child->getNodeId() == el_pseudoElem && child->hasAttribute(attr_FirstLetter) ) {
+            return; // already present
+        }
+    }
+    ldomNode * textNode = NULL;
+    int charIndex = -1;
+    int insertIndex = -1;
+    for ( int i=0; i<nb_children; i++ ) {
+        ldomNode * child = getChildNode(i);
+        if ( !child )
+            continue;
+        if ( child->getNodeId() == el_pseudoElem && child->hasAttribute(attr_Before) ) {
+            return; // ::before content blocks ::first-letter
+        }
+        if ( child->isText() ) {
+            lString32 text = child->getText();
+            for ( int j=0; j<text.length(); j++ ) {
+                if ( !(lGetCharProps(text[j]) & CH_PROP_SPACE) ) {
+                    textNode = child;
+                    charIndex = j;
+                    insertIndex = i;
+                    break;
+                }
+            }
+            if ( textNode )
+                break;
+            continue;
+        }
+        if ( !child->isElement() )
+            continue;
+        css_style_ref_t child_style = child->getStyle();
+        if ( !child_style.isNull() && (child_style->display == css_d_none || child->getRendMethod() == erm_invisible) ) {
+            continue;
+        }
+        if ( child->getNodeId() == el_br || child->isImage() || child->isBoxingInlineBox() || isInlineBlockLikeNode(child) ) {
+            return; // inline non-text content before first letter
+        }
+        if ( child->getRendMethod() != erm_inline ) {
+            return; // block content before first letter
+        }
+        int res = findFirstLetterInInlineNode(child, textNode, charIndex);
+        if ( res == -1 ) {
+            return; // blocked inside inline content
+        }
+        if ( res == 1 ) {
+            insertIndex = i;
+            break;
+        }
+    }
+    if ( !textNode || charIndex < 0 )
+        return;
+    lString32 original = textNode->getText();
+    if ( charIndex >= original.length() )
+        return;
+    lChar32 firstChar = original[charIndex];
+    lString32 remaining = original;
+    remaining.erase( charIndex, 1 );
+    textNode->setText( remaining );
+    if ( insertIndex < 0 )
+        insertIndex = textNode->getNodeIndex();
+    ldomNode * pseudo = insertChildElement( insertIndex, LXML_NS_NONE, el_pseudoElem );
+    lString32 firstLetter;
+    firstLetter << firstChar;
+    pseudo->setAttributeValue(LXML_NS_NONE, attr_FirstLetter, firstLetter);
+    pseudo->setAttributeValue(LXML_NS_NONE, attr_InnerText, original);
+#endif
+}
+
+void ldomNode::removeFirstLetterPseudoElement() {
+#if BUILD_LITE!=1
+    int nb_children = getChildCount();
+    for ( int i=0; i<nb_children; i++ ) {
+        ldomNode * child = getChildNode(i);
+        if ( child && child->getNodeId() == el_pseudoElem && child->hasAttribute(attr_FirstLetter) ) {
+            lString32 original = child->getAttributeValue(attr_InnerText);
+            if ( !original.empty() ) {
+                for ( int j=i+1; j<nb_children; j++ ) {
+                    ldomNode * next = getChildNode(j);
+                    if ( next && next->isText() ) {
+                        next->setText( original );
+                        break;
+                    }
+                }
+            }
+            removeChildren(i, i);
+            break;
+        }
+    }
 #endif
 }
 
