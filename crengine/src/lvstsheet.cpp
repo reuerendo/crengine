@@ -1779,8 +1779,12 @@ lString32 get_applied_content_property( ldomNode * node ) {
     lString32 res;
     css_style_ref_t style = node->getStyle();
     lString32 parsed_content = style->content;
-    if ( parsed_content.empty() )
+    if ( parsed_content.empty() ) {
+        if ( node->getNodeId() == el_pseudoElem && node->hasAttribute(attr_FirstLetter) ) {
+            res = node->getAttributeValue(attr_FirstLetter);
+        }
         return res;
+    }
     int i = 0;
     int parsed_content_len = parsed_content.length();
     while ( i < parsed_content_len ) {
