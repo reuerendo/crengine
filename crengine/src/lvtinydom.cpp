@@ -6352,12 +6352,10 @@ void ldomNode::ensureFirstLetterPseudoElement() {
     }
     if ( !isElement() )
         return;
-
     css_style_ref_t style = getStyle();
     if ( style.isNull() || style->display <= css_d_inline || style->display == css_d_none ) {
         return; // ::first-letter applies to block elements only
     }
-
     int nb_children = getChildCount();
     for ( int i=0; i<nb_children; i++ ) {
         ldomNode * child = getChildNode(i);
@@ -6365,20 +6363,16 @@ void ldomNode::ensureFirstLetterPseudoElement() {
             return; // already present
         }
     }
-
     ldomNode * textNode = NULL;
     int charIndex = -1;
     int insertIndex = -1;
-
     for ( int i=0; i<nb_children; i++ ) {
         ldomNode * child = getChildNode(i);
         if ( !child )
             continue;
-        
         if ( child->getNodeId() == el_pseudoElem && child->hasAttribute(attr_Before) ) {
             return; // ::before content blocks ::first-letter
         }
-
         if ( child->isText() ) {
             lString32 text = child->getText();
             for ( int j=0; j<text.length(); j++ ) {
@@ -6393,22 +6387,18 @@ void ldomNode::ensureFirstLetterPseudoElement() {
                 break;
             continue;
         }
-
         if ( !child->isElement() )
             continue;
-
         css_style_ref_t child_style = child->getStyle();
         if ( !child_style.isNull() && (child_style->display == css_d_none || child->getRendMethod() == erm_invisible) ) {
             continue;
         }
-
         if ( child->getNodeId() == el_br || child->isImage() || child->isBoxingInlineBox() || isInlineBlockLikeNode(child) ) {
             return; // inline non-text content before first letter
         }
         if ( child->getRendMethod() != erm_inline ) {
             return; // block content before first letter
         }
-
         int res = findFirstLetterInInlineNode(child, textNode, charIndex);
         if ( res == -1 ) {
             return; // blocked inside inline content
@@ -6418,7 +6408,6 @@ void ldomNode::ensureFirstLetterPseudoElement() {
             break;
         }
     }
-
     if ( !textNode || charIndex < 0 )
         return;
 
@@ -6466,18 +6455,17 @@ void ldomNode::ensureFirstLetterPseudoElement() {
     lString32 firstLetters = original.substr(charIndex, extractLen);
     lString32 remaining = original;
     remaining.erase( charIndex, extractLen );
-    
-    // Update the original text node (removing the first letter part)
     textNode->setText( remaining );
 
+    // Если insertIndex не был установлен явно циклом, используем индекс текстовой ноды
     if ( insertIndex < 0 )
         insertIndex = textNode->getNodeIndex();
 
-    // Create the pseudo element
     ldomNode * pseudo = insertChildElement( insertIndex, LXML_NS_NONE, el_pseudoElem );
     
-    pseudo->setAttributeValue(LXML_NS_NONE, attr_FirstLetter, L"");
-
+    lString32 emptyVal; 
+    pseudo->setAttributeValue(LXML_NS_NONE, attr_FirstLetter, emptyVal.c_str());
+    
     pseudo->insertChildText( 0, firstLetters ); 
     
     pseudo->initNodeStyle();
