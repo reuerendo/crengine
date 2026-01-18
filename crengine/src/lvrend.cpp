@@ -2356,7 +2356,20 @@ bool isSameFontStyle( css_style_rec_t * style1, css_style_rec_t * style2 )
         && (style1->font_size == style2->font_size)
         && (style1->font_style == style2->font_style)
         && (style1->font_name == style2->font_name)
-        && (style1->font_weight == style2->font_weight);
+        && (style1->font_weight == style2->font_weight)
+        && (style1->font_feature_settings_type == style2->font_feature_settings_type)
+        && (style1->font_feature_settings == style2->font_feature_settings);
+}
+
+static void CopyStyleFields( css_style_rec_t * dest, css_style_rec_t * source )
+{
+    dest->font_family = source->font_family;
+    dest->font_size = source->font_size;
+    dest->font_style = source->font_style;
+    dest->font_name = source->font_name;
+    dest->font_weight = source->font_weight;
+    dest->font_feature_settings_type = source->font_feature_settings_type;
+    dest->font_feature_settings = source->font_feature_settings;
 }
 
 static int rend_font_base_weight = 400;
@@ -2417,6 +2430,7 @@ LVFontRef getFont(ldomNode * node, css_style_rec_t * style, int documentId)
         style->font_family,
         lString8(style->font_name.c_str()),
         style->font_features.value, // (.type is always css_val_unspecified after setNodeStyle())
+        style->font_feature_settings_type == css_val_inherited ? lString8::empty_str : style->font_feature_settings,
         documentId, true); // useBias=true, so that our preferred font gets used
     //fnt = LVCreateFontTransform( fnt, LVFONT_TRANSFORM_EMBOLDEN );
     return fnt;
@@ -4526,6 +4540,8 @@ void copystyle( css_style_ref_t source, css_style_ref_t dest )
     dest->font_weight = source->font_weight ;
     dest->font_features.type = source->font_features.type ;
     dest->font_features.value = source->font_features.value ;
+    dest->font_feature_settings_type = source->font_feature_settings_type;
+    dest->font_feature_settings = source->font_feature_settings;
     dest->text_indent = source->text_indent ;
     dest->line_height = source->line_height ;
     dest->width = source->width ;

@@ -37,6 +37,7 @@ enum css_style_rec_important_bit {
     imp_bit_font_style,
     imp_bit_font_weight,
     imp_bit_font_features,
+    imp_bit_font_feature_settings,
     imp_bit_text_indent,
     imp_bit_line_height,
     imp_bit_width,
@@ -95,7 +96,7 @@ enum css_style_rec_important_bit {
     imp_bit_content,
     imp_bit_cr_hint
 };
-#define NB_IMP_BITS 70 // The number of lines in the enum above: KEEP IT UPDATED.
+#define NB_IMP_BITS 71 // The number of lines in the enum above: KEEP IT UPDATED.
 
 #define NB_IMP_SLOTS    ((NB_IMP_BITS-1)>>5)+1
 // In lvstyles.cpp, we have hardcoded important[0] ... importance[2]
@@ -142,6 +143,8 @@ struct css_style_rec_tag {
     css_font_style_t     font_style;
     css_font_weight_t    font_weight;
     css_length_t         font_features;
+    css_value_type_t     font_feature_settings_type;
+    lString8             font_feature_settings;
     css_length_t         text_indent;
     css_length_t         line_height;
     css_length_t         width;
@@ -208,6 +211,8 @@ struct css_style_rec_tag {
     , font_style(css_fs_inherit)
     , font_weight(css_fw_inherit)
     , font_features(css_val_inherited, 0)
+    , font_feature_settings_type(css_val_inherited)
+    , font_feature_settings("")
     , text_indent(css_val_inherited, 0)
     , line_height(css_val_inherited, 0)
     , width(css_val_unspecified, css_generic_auto)
@@ -295,6 +300,21 @@ struct css_style_rec_tag {
             *field = value; // apply
             if (is_important & 0x1) important[slot] |= sbit;   // update important flag
             if (is_important == 0x3) importance[slot] |= sbit; // update importance flag (!important comes from higher_importance CSS)
+        }
+    }
+    // Apply OpenType features from CSS font-feature-settings, keeping its own inheritance.
+    inline void ApplyFeatureSettings( css_value_type_t type, const lString8 & value,
+            css_style_rec_important_bit bit, lUInt8 is_important ) {
+        int slot = bit>>5;
+        int sbit = 1<<(bit&0x1f);
+        if (     !(important[slot] & sbit)
+              || (is_important == 0x3)
+              || (is_important == 0x1 && !(importance[slot] & sbit) )
+           ) {
+            font_feature_settings_type = type;
+            font_feature_settings = value;
+            if (is_important & 0x1) important[slot] |= sbit;
+            if (is_important == 0x3) importance[slot] |= sbit;
         }
     }
     // Similar to previous one, but logical-OR'ing values, for bitmaps (currently, only style->font_features and style->cr_hint)
