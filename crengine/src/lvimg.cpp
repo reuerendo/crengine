@@ -2043,7 +2043,7 @@ static void lunasvgTextToPathsHelper(lunasvg::external_context_t * xcontext, con
     LunaSVGGlyphsCollector collector(scale, callback);
 
     LVFontRef font = fontMan->GetFont(font_size, font_spec->weight, font_spec->italic, css_ff_sans_serif,
-                                        font_family, font_spec->features, docId, true);
+                                        font_family, font_spec->features, lString8::empty_str, docId, true);
 
     TextLangCfg * lang_cfg = NULL;
     if ( font_spec->lang )
