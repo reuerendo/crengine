@@ -4697,9 +4697,6 @@ public:
         bool firstLineOverlayActive = false;
         LVArray<src_text_fragment_t*> base_srcs;
         base_srcs.reserve(m_length);
-        ldomNode * firstLineOwner = NULL;
-        LVFontRef firstLineFont;
-        lInt16 firstLineLetterSpacing = 0;
         {
             src_text_fragment_t * first_src = &m_pbuffer->srctext[start];
             ldomNode * owner = first_src && first_src->object ? (ldomNode *)first_src->object : NULL;
@@ -4758,9 +4755,6 @@ public:
                         }
 
                         firstLineOverlayActive = true;
-                        firstLineOwner = owner;
-                        firstLineFont = flfont;
-                        firstLineLetterSpacing = fl_letter_spacing;
                         measureText();
                     }
                 }
