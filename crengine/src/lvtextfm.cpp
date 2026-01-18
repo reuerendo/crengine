@@ -3101,6 +3101,18 @@ public:
                     }
                 }
             #endif
+
+            // After the first emitted line, disable ::first-line overlay for the rest of the paragraph.
+            // We keep it only for chars already emitted on the first line.
+            if ( firstLineOverlayActive ) {
+                // 'pos' now points to the first char of the next line (after possible hyphen duplication).
+                // Restore base_srcs for remaining chars, and recompute widths.
+                for ( int i=pos; i<m_length; i++ ) {
+                    m_srcs[i] = base_srcs[i];
+                }
+                firstLineOverlayActive = false;
+                measureText();
+            }
         }
     }
 
@@ -4691,8 +4703,15 @@ public:
         measureText();
 
         // ::first-line (Variant A): affect line breaking/metrics.
-        // We do it by cloning srctext fragments with an overridden font/letter-spacing
-        // and remapping m_srcs for the characters that will be on the first formatted line.
+        // We first apply the overlay to the whole paragraph to let the existing
+        // line-breaking logic determine the exact first line end with correct widths.
+        // Right after the first line is emitted, we restore base metrics for the rest.
+        bool firstLineOverlayActive = false;
+        LVArray<src_text_fragment_t*> base_srcs;
+        base_srcs.reserve(m_length);
+        ldomNode * firstLineOwner = NULL;
+        LVFontRef firstLineFont;
+        lInt16 firstLineLetterSpacing = 0;
         {
             src_text_fragment_t * first_src = &m_pbuffer->srctext[start];
             ldomNode * owner = first_src && first_src->object ? (ldomNode *)first_src->object : NULL;
@@ -4710,69 +4729,51 @@ public:
                         int em = flfont->getSize();
                         lInt16 fl_letter_spacing = (lInt16)lengthToPx(owner, flstyle->letter_spacing, em);
 
-                        int maxWidth = getCurrentLineWidth();
-                        // Quick estimation of the first line end: find last allowed wrap before overflow.
-                        // This is refined later by the normal line splitting logic using the updated widths.
-                        int lastNormalWrap = -1;
-                        int endp = -1;
+                        // Save base mapping
+                        for ( int i=0; i<m_length; i++ )
+                            base_srcs.add( m_srcs[i] );
+
+                        // Clone srctext fragments (at most one clone per original) and remap all chars
+                        LVArray<src_text_fragment_t*> orig;
+                        LVArray<src_text_fragment_t*> clone;
                         for ( int i=0; i<m_length; i++ ) {
-                            if ( m_text[i] == '\n' ) {
-                                lastNormalWrap = i;
-                                break;
+                            if ( m_flags[i] & LCHAR_IS_OBJECT )
+                                continue;
+                            src_text_fragment_t * s = m_srcs[i];
+                            if ( !s )
+                                continue;
+                            int found = -1;
+                            for ( int j=0; j<orig.length(); j++ ) {
+                                if ( orig[j] == s ) {
+                                    found = j;
+                                    break;
+                                }
                             }
-                            if ( (m_flags[i] & LCHAR_ALLOW_WRAP_AFTER) || (m_flags[i] & LCHAR_IS_CJK) || i == m_length-1 ) {
-                                lastNormalWrap = i;
+                            if ( found < 0 ) {
+                                int srctextsize = (m_pbuffer->srctextlen + FRM_ALLOC_SIZE-1) / FRM_ALLOC_SIZE * FRM_ALLOC_SIZE;
+                                if ( m_pbuffer->srctextlen >= srctextsize ) {
+                                    srctextsize += FRM_ALLOC_SIZE;
+                                    m_pbuffer->srctext = cr_realloc( m_pbuffer->srctext, srctextsize );
+                                }
+                                src_text_fragment_t * c = &m_pbuffer->srctext[ m_pbuffer->srctextlen++ ];
+                                *c = *s;
+                                // Ensure we don't double free the underlying text buffer
+                                c->flags &= ~LTEXT_FLAG_OWNTEXT;
+                                c->t.font = flfont.get();
+                                c->letter_spacing = fl_letter_spacing;
+                                c->index = (lUInt16)(m_pbuffer->srctextlen-1);
+                                orig.add( s );
+                                clone.add( c );
+                                found = orig.length()-1;
                             }
-                            int w = m_widths[i];
-                            if ( w > maxWidth && lastNormalWrap >= 0 ) {
-                                break;
-                            }
-                        }
-                        if ( lastNormalWrap >= 0 ) {
-                            endp = lastNormalWrap + 1;
-                            if ( endp > m_length )
-                                endp = m_length;
+                            m_srcs[i] = clone[found];
                         }
 
-                        if ( endp > 0 ) {
-                            // Create at most one clone per original src_text_fragment_t for this first line.
-                            LVArray<src_text_fragment_t*> orig;
-                            LVArray<src_text_fragment_t*> clone;
-                            for ( int i=0; i<endp; i++ ) {
-                                if ( m_flags[i] & LCHAR_IS_OBJECT )
-                                    continue;
-                                src_text_fragment_t * s = m_srcs[i];
-                                if ( !s )
-                                    continue;
-                                int found = -1;
-                                for ( int j=0; j<orig.length(); j++ ) {
-                                    if ( orig[j] == s ) {
-                                        found = j;
-                                        break;
-                                    }
-                                }
-                                if ( found < 0 ) {
-                                    int srctextsize = (m_pbuffer->srctextlen + FRM_ALLOC_SIZE-1) / FRM_ALLOC_SIZE * FRM_ALLOC_SIZE;
-                                    if ( m_pbuffer->srctextlen >= srctextsize ) {
-                                        srctextsize += FRM_ALLOC_SIZE;
-                                        m_pbuffer->srctext = cr_realloc( m_pbuffer->srctext, srctextsize );
-                                    }
-                                    src_text_fragment_t * c = &m_pbuffer->srctext[ m_pbuffer->srctextlen++ ];
-                                    *c = *s;
-                                    // Ensure we don't double free the underlying text buffer
-                                    c->flags &= ~LTEXT_FLAG_OWNTEXT;
-                                    c->t.font = flfont.get();
-                                    c->letter_spacing = fl_letter_spacing;
-                                    c->index = (lUInt16)(m_pbuffer->srctextlen-1);
-                                    orig.add( s );
-                                    clone.add( c );
-                                    found = orig.length()-1;
-                                }
-                                m_srcs[i] = clone[found];
-                            }
-                            // Recompute widths with this partial overlay applied.
-                            measureText();
-                        }
+                        firstLineOverlayActive = true;
+                        firstLineOwner = owner;
+                        firstLineFont = flfont;
+                        firstLineLetterSpacing = fl_letter_spacing;
+                        measureText();
                     }
                 }
             }
