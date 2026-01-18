@@ -3101,18 +3101,6 @@ public:
                     }
                 }
             #endif
-
-            // After the first emitted line, disable ::first-line overlay for the rest of the paragraph.
-            // We keep it only for chars already emitted on the first line.
-            if ( firstLineOverlayActive ) {
-                // 'pos' now points to the first char of the next line (after possible hyphen duplication).
-                // Restore base_srcs for remaining chars, and recompute widths.
-                for ( int i=pos; i<m_length; i++ ) {
-                    m_srcs[i] = base_srcs[i];
-                }
-                firstLineOverlayActive = false;
-                measureText();
-            }
         }
     }
 
@@ -5415,6 +5403,18 @@ public:
                 }
             }
             #endif
+
+            // After the first emitted line, disable ::first-line overlay for the rest of the paragraph.
+            // We keep it only for chars already emitted on the first line.
+            if ( firstLineOverlayActive ) {
+                // 'pos' now points to the first char of the next line (after possible hyphen duplication).
+                // Restore base_srcs for remaining chars, and recompute widths.
+                for ( int i=pos; i<m_length; i++ ) {
+                    m_srcs[i] = base_srcs[i];
+                }
+                firstLineOverlayActive = false;
+                measureText();
+            }
         }
     }
 
