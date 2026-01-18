@@ -1409,7 +1409,7 @@ void LVDocView::drawBatteryState(LVDrawBuf * drawbuf, const lvRect & batteryRc,
 		icons.add(m_batteryIcons[0]);
 		if ( drawPercent ) {
             m_batteryFont = fontMan->GetFont(m_batteryIcons[0]->GetHeight()-1, 900, false,
-                    DEFAULT_FONT_FAMILY, m_statusFontFace);
+                    DEFAULT_FONT_FAMILY, m_statusFontFace, 0, lString8::empty_str);
             icons.add(m_batteryIcons[m_batteryIcons.length()-1]);
 		} else {
 			for ( int i=1; i<m_batteryIcons.length()-1; i++ )
@@ -7307,7 +7307,7 @@ bool SimpleTitleFormatter::splitLines(const char * delimiter) {
     return measure();
 }
 bool SimpleTitleFormatter::format(int fontSize) {
-    _font = fontMan->GetFont(fontSize, _bold ? 800 : 400, _italic, css_ff_sans_serif, _fontFace, 0, -1);
+    _font = fontMan->GetFont(fontSize, _bold ? 800 : 400, _italic, css_ff_sans_serif, _fontFace, 0, lString8::empty_str, -1);
     _lineHeight = _font->getHeight() * 120 / 100;
     _lines.clear();
     _height = 0;
