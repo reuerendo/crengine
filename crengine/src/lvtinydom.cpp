@@ -5204,6 +5204,7 @@ void tinyNodeCollection::dropStyles()
     _styles.clear(-1);
     _fonts.clear(-1);
     resetNodeNumberingProps();
+    resetNodeFirstLineStyles();
 
     int count = ((_elemCount+TNC_PART_LEN-1) >> TNC_PART_SHIFT);
     for ( int i=0; i<count; i++ ) {
@@ -20622,14 +20623,29 @@ void ldomDocument::resetNodeNumberingProps()
     lists.clear();
 }
 
+void ldomDocument::resetNodeFirstLineStyles()
+{
+    _firstLineStyles.clear();
+}
+
 ListNumberingPropsRef ldomDocument::getNodeNumberingProps( lUInt32 nodeDataIndex )
 {
     return lists.get(nodeDataIndex);
 }
 
+css_style_ref_t ldomDocument::getNodeFirstLineStyle( lUInt32 nodeDataIndex )
+{
+    return _firstLineStyles.get(nodeDataIndex);
+}
+
 void ldomDocument::setNodeNumberingProps( lUInt32 nodeDataIndex, ListNumberingPropsRef v )
 {
     lists.set(nodeDataIndex, v);
+}
+
+void ldomDocument::setNodeFirstLineStyle( lUInt32 nodeDataIndex, css_style_ref_t v )
+{
+    _firstLineStyles.set(nodeDataIndex, v);
 }
 
 /// returns the sum of this node and its parents' top and bottom margins, borders and paddings

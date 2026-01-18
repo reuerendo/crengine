@@ -4690,6 +4690,94 @@ public:
         // measure paragraph text
         measureText();
 
+        // ::first-line (Variant A): affect line breaking/metrics.
+        // We do it by cloning srctext fragments with an overridden font/letter-spacing
+        // and remapping m_srcs for the characters that will be on the first formatted line.
+        {
+            src_text_fragment_t * first_src = &m_pbuffer->srctext[start];
+            ldomNode * owner = first_src && first_src->object ? (ldomNode *)first_src->object : NULL;
+            if ( owner && owner->isText() )
+                owner = owner->getParentNode();
+            while ( owner && !owner->isNull() && owner->isElement() && owner->getRendMethod() != erm_final ) {
+                owner = owner->getParentNode();
+            }
+            if ( owner && !owner->isNull() ) {
+                ldomDocument * doc = owner->getDocument();
+                css_style_ref_t flstyle = doc->getNodeFirstLineStyle( owner->getDataIndex() );
+                if ( !flstyle.isNull() ) {
+                    LVFontRef flfont = getFont(owner, flstyle.get(), doc->getFontContextDocIndex());
+                    if ( !flfont.isNull() ) {
+                        int em = flfont->getSize();
+                        lInt16 fl_letter_spacing = (lInt16)lengthToPx(owner, flstyle->letter_spacing, em);
+
+                        int maxWidth = getCurrentLineWidth();
+                        // Quick estimation of the first line end: find last allowed wrap before overflow.
+                        // This is refined later by the normal line splitting logic using the updated widths.
+                        int lastNormalWrap = -1;
+                        int endp = -1;
+                        for ( int i=0; i<m_length; i++ ) {
+                            if ( m_text[i] == '\n' ) {
+                                lastNormalWrap = i;
+                                break;
+                            }
+                            if ( (m_flags[i] & LCHAR_ALLOW_WRAP_AFTER) || (m_flags[i] & LCHAR_IS_CJK) || i == m_length-1 ) {
+                                lastNormalWrap = i;
+                            }
+                            int w = m_widths[i];
+                            if ( w > maxWidth && lastNormalWrap >= 0 ) {
+                                break;
+                            }
+                        }
+                        if ( lastNormalWrap >= 0 ) {
+                            endp = lastNormalWrap + 1;
+                            if ( endp > m_length )
+                                endp = m_length;
+                        }
+
+                        if ( endp > 0 ) {
+                            // Create at most one clone per original src_text_fragment_t for this first line.
+                            LVArray<src_text_fragment_t*> orig;
+                            LVArray<src_text_fragment_t*> clone;
+                            for ( int i=0; i<endp; i++ ) {
+                                if ( m_flags[i] & LCHAR_IS_OBJECT )
+                                    continue;
+                                src_text_fragment_t * s = m_srcs[i];
+                                if ( !s )
+                                    continue;
+                                int found = -1;
+                                for ( int j=0; j<orig.length(); j++ ) {
+                                    if ( orig[j] == s ) {
+                                        found = j;
+                                        break;
+                                    }
+                                }
+                                if ( found < 0 ) {
+                                    int srctextsize = (m_pbuffer->srctextlen + FRM_ALLOC_SIZE-1) / FRM_ALLOC_SIZE * FRM_ALLOC_SIZE;
+                                    if ( m_pbuffer->srctextlen >= srctextsize ) {
+                                        srctextsize += FRM_ALLOC_SIZE;
+                                        m_pbuffer->srctext = cr_realloc( m_pbuffer->srctext, srctextsize );
+                                    }
+                                    src_text_fragment_t * c = &m_pbuffer->srctext[ m_pbuffer->srctextlen++ ];
+                                    *c = *s;
+                                    // Ensure we don't double free the underlying text buffer
+                                    c->flags &= ~LTEXT_FLAG_OWNTEXT;
+                                    c->t.font = flfont.get();
+                                    c->letter_spacing = fl_letter_spacing;
+                                    c->index = (lUInt16)(m_pbuffer->srctextlen-1);
+                                    orig.add( s );
+                                    clone.add( c );
+                                    found = orig.length()-1;
+                                }
+                                m_srcs[i] = clone[found];
+                            }
+                            // Recompute widths with this partial overlay applied.
+                            measureText();
+                        }
+                    }
+                }
+            }
+        }
+
         // We keep as 'para' the first source text, as it carries
         // the text alignment to use with all added lines.
         src_text_fragment_t * para = &m_pbuffer->srctext[start];
