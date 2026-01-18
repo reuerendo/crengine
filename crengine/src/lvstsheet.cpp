@@ -63,7 +63,8 @@ enum css_decl_code {
     cssd_font_size,
     cssd_font_style,
     cssd_font_weight,
-    cssd_font_features,           // font-feature-settings (not yet parsed)
+    cssd_font_features,           // font-feature-settings
+    cssd_font_features_bitmap,    // internal: OpenType features bitmap (mapped from font-variant*)
     cssd_font_variant,            // all these are parsed specifically and mapped into
     cssd_font_variant_ligatures,  // the same style->font_features 31 bits bitmap
     cssd_font_variant_ligatures2, // -webkit-font-variant-ligatures (former Webkit property)
@@ -174,6 +175,7 @@ static const char * css_decl_name[] = {
     "font-style",
     "font-weight",
     "font-feature-settings",
+    "$dummy-for-font-features-bitmap$",
     "font-variant",
     "font-variant-ligatures",
     "-webkit-font-variant-ligatures",
@@ -3885,19 +3887,113 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                 n = parse_name( decl, css_fw_names, -1 );
                 break;
             case cssd_font_features: // font-feature-settings
-                // Not (yet) implemented.
-                // We map font-variant(|-*) values into the style->font_features bitmap,
-                // that is associated to cssd_font_features, as "font-feature-settings" looks
-                // nearer (than font-variant) to how we handle internally OpenType feature tags.
-                // But font-variant and font-feature-settings, even if they enable the same
-                // OpenType feature tags, should have each a life (inheritance) of their own,
-                // which we won't really ensure by mapping all of them into style->font_features.
-                // Also, font-feature-settings is quite more complicated to parse (optional
-                // arguments, 0|1|2|3|on|off...), and we would only support up to the 31 tags
-                // that can be stored in the bitmap, so ignoring all possible others.
-                // As font-feature-settings is quite new, let's not support it (quite
-                // often, publishers will include both font-variant and font-feature-settings
-                // in a same declaration, so we should be fine).
+                IF_g_PUSH_LENGTH_AND_break(1, true, css_val_inherited, 0);
+                {
+                    // Parse a (subset of) CSS font-feature-settings.
+                    // We store a comma-separated list of HarfBuzz feature strings that can be fed
+                    // to hb_feature_from_string(), like: "+ss01,-liga,smcp=1".
+                    // We accept:
+                    // - "normal" : reset to default (empty list)
+                    // - string tag: "ss01" "liga" ... (4 chars), optionally followed by:
+                    //     - on|off
+                    //     - integer value
+                    //     - 0|1
+                    lString8 hb_features;
+                    hb_features.reserve(32);
+                    int nb_parsed = 0;
+                    int nb_invalid = 0;
+                    while ( *decl && *decl != ';' && *decl != stop_char ) {
+                        if ( substr_icompare("normal", decl) ) {
+                            hb_features.clear();
+                        }
+                        else if ( parse_important(decl) ) {
+                            parsed_important = IMPORTANT_DECL_SET;
+                            break;
+                        }
+                        else if ( *decl == '\"' || *decl == '\'' ) {
+                            char quote = *decl++;
+                            char tag[5];
+                            int ti = 0;
+                            while ( *decl && *decl != quote && ti < 4 ) {
+                                tag[ti++] = *decl++;
+                            }
+                            tag[ti] = 0;
+                            while ( *decl && *decl != quote )
+                                decl++;
+                            if ( *decl == quote )
+                                decl++;
+                            bool valid_tag = (ti == 4);
+                            for (int k = 0; k < 4 && valid_tag; k++) {
+                                char c = tag[k];
+                                if ( !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) )
+                                    valid_tag = false;
+                            }
+                            skip_spaces( decl );
+                            int value = 1;
+                            bool have_value = false;
+                            if ( substr_icompare("on", decl) ) {
+                                value = 1;
+                                have_value = true;
+                            }
+                            else if ( substr_icompare("off", decl) ) {
+                                value = 0;
+                                have_value = true;
+                            }
+                            else {
+                                const char * orig_pos = decl;
+                                bool neg = false;
+                                if ( *decl == '+' ) {
+                                    decl++;
+                                }
+                                else if ( *decl == '-' ) {
+                                    neg = true;
+                                    decl++;
+                                }
+                                int num = 0;
+                                int nd = 0;
+                                while ( *decl >= '0' && *decl <= '9' ) {
+                                    num = num * 10 + (*decl - '0');
+                                    decl++;
+                                    nd++;
+                                }
+                                if ( nd > 0 ) {
+                                    value = neg ? -num : num;
+                                    have_value = true;
+                                }
+                                else {
+                                    decl = orig_pos;
+                                }
+                            }
+                            if ( valid_tag ) {
+                                if ( !hb_features.empty() )
+                                    hb_features << ",";
+                                hb_features << tag;
+                                if ( have_value )
+                                    hb_features << "=" << lString8::itoa(value);
+                            }
+                            else {
+                                nb_invalid++;
+                            }
+                        }
+                        else {
+                            nb_invalid++;
+                            while (*decl && *decl !=' ' && *decl !=';' && *decl!=stop_char)
+                                decl++;
+                        }
+                        nb_parsed++;
+                        skip_spaces( decl );
+                    }
+                    if ( nb_parsed - nb_invalid > 0 || !hb_features.empty() ) {
+                        buf<<(lUInt32) (prop_code | importance | parsed_important);
+                        buf<<(lUInt32) css_val_unspecified;
+                        int len = hb_features.length();
+                        if ( len > 255 )
+                            len = 255;
+                        buf<<(lUInt32) len;
+                        for (int i=0; i<len; i++)
+                            buf<<(lUInt32) (lUInt8)hb_features[i];
+                    }
+                }
                 break;
             case cssd_font_variant:
             case cssd_font_variant_ligatures:
@@ -3921,7 +4017,7 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                     bool parse_eastasian =  prop_code == cssd_font_variant || prop_code == cssd_font_variant_east_asian;
                     bool parse_alternates = prop_code == cssd_font_variant || prop_code == cssd_font_variant_alternates;
                     // All values are mapped into a single style->font_features 31 bits bitmap
-                    prop_code = cssd_font_features;
+                    prop_code = cssd_font_features_bitmap;
                     int features = 0; // "normal" = no extra feature
                     int nb_parsed = 0;
                     int nb_invalid = 0;
@@ -5206,6 +5302,19 @@ void LVCssDeclaration::apply( css_style_rec_t * style, const ldomNode * node ) c
             style->flags |= STYLE_REC_FLAG_INHERITABLE_APPLIED;
             break;
         case cssd_font_features:
+            {
+                css_value_type_t t = (css_value_type_t)*p++;
+                lString8 features;
+                features.reserve(32);
+                int len = *p++;
+                for (int i=0; i<len; i++)
+                    features << (lChar8)(*p++);
+                features.pack();
+                style->ApplyFeatureSettings( t, features, imp_bit_font_feature_settings, is_important );
+                style->flags |= STYLE_REC_FLAG_INHERITABLE_APPLIED;
+            }
+            break;
+        case cssd_font_features_bitmap:
             // We want to 'OR' the bitmap from any declaration that is to be applied to this node
             // (while still ensuring !important).
             {

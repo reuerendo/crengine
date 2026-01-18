@@ -579,6 +579,7 @@ private:
     int               _weight;
     int               _italic;
     int               _features; // OpenType features requested
+    lString8          _feature_settings; // OpenType features from CSS font-feature-settings
     css_font_family_t _family;
     lString8          _typeface;
     lString8          _name;
@@ -593,11 +594,12 @@ private:
     bool _has_emojis;
 public:
     LVFontDef(const lString8 & name, int size, int weight, int italic, int features, css_font_family_t family,
-                const lString8 & typeface, int index=-1, int documentId=-1, LVByteArrayRef buf = LVByteArrayRef())
+                const lString8 & typeface, lString8 feature_settings=lString8::empty_str, int index=-1, int documentId=-1, LVByteArrayRef buf = LVByteArrayRef())
         : _size(size)
         , _weight(weight)
         , _italic(italic)
         , _features(features)
+        , _feature_settings(feature_settings)
         , _family(family)
         , _typeface(typeface)
         , _name(name)
@@ -615,6 +617,7 @@ public:
         , _weight(def._weight)
         , _italic(def._italic)
         , _features(def._features)
+        , _feature_settings(def._feature_settings)
         , _family(def._family)
         , _typeface(def._typeface)
         , _name(def._name)
@@ -636,6 +639,7 @@ public:
             && ( _italic == def._italic || _italic==-1 || def._italic==-1 )
             && _real_weight == def._real_weight
             && _features == def._features
+            && _feature_settings == def._feature_settings
             && _family == def._family
             && _typeface == def._typeface
             && _name == def._name
@@ -645,7 +649,7 @@ public:
     }
 
     lUInt32 getHash() const {
-        lUInt32 h =  (((((_size * 31) + _weight)*31  + _italic)*31 + _features)*31+ _family)*31 + _name.getHash();
+        lUInt32 h =  ((((((_size * 31) + _weight)*31  + _italic)*31 + _features)*31 + _feature_settings.getHash())*31+ _family)*31 + _name.getHash();
         // _bias is not a static property, and can be set/unset on these definitions.
         // If a same _bias value is moved from one font to another, *adding* _bias
         // to this hash may result in a final identical GetFontListHash() value
@@ -675,6 +679,8 @@ public:
     void setTypeFace(lString8 tf) { _typeface = tf; }
     int getFeatures() const { return _features; }
     void setFeatures( int features ) { _features = features; }
+    lString8 getFeatureSettings() const { return _feature_settings; }
+    void setFeatureSettings( const lString8 & feature_settings ) { _feature_settings = feature_settings; }
     bool hasOTMath() const { return _has_ot_math; }
     void setHasOTMath(bool has_ot_math) { _has_ot_math = has_ot_math; }
     bool hasEmojis() const { return _has_emojis; }
@@ -1495,6 +1501,7 @@ protected:
     FT_Pos         _synth_weight_strength; // for emboldening with FT_Outline_Embolden()
     FT_Pos         _synth_weight_half_strength;
     int            _features; // requested OpenType features bitmap
+    lString8        _feature_settings; // OpenType features from CSS font-feature-settings
 #if USE_HARFBUZZ==1
     hb_font_t* _hb_font;
     hb_buffer_t* _hb_buffer;
@@ -1683,6 +1690,7 @@ public:
         , _fallbackFontIsSet(false), _nextFallbackFontIsSet(false)
         , _synth_weight(0), _synth_weight_strength(0), _synth_weight_half_strength(0)
         , _features(0)
+        , _feature_settings(lString8::empty_str)
         #if USE_HARFBUZZ==1
         , _glyph_cache2(globalCache)
         , _width_cache2(1024)
@@ -1888,6 +1896,22 @@ public:
             if ( _features & LFNT_OT_FEATURES_P_JP83 ) { addHBFeature("+jp83"); }
             if ( _features & LFNT_OT_FEATURES_P_JP04 ) { addHBFeature("+jp04"); }
         }
+        if ( !_feature_settings.empty() ) {
+            int start = 0;
+            while ( start < _feature_settings.length() ) {
+                int comma = _feature_settings.pos(',', start);
+                int len = comma < 0 ? _feature_settings.length() - start : comma - start;
+                if ( len > 0 ) {
+                    lString8 feat = _feature_settings.substr(start, len);
+                    feat.trim();
+                    if ( !feat.empty() )
+                        addHBFeature(feat.c_str());
+                }
+                if ( comma < 0 )
+                    break;
+                start = comma + 1;
+            }
+        }
     }
     #endif
 
@@ -1897,6 +1921,18 @@ public:
     }
     virtual int getFeatures() const {
         return _features;
+    }
+
+    virtual lString8 getFeatureSettings() const {
+        return _feature_settings;
+    }
+    virtual void setFeatureSettings( const lString8 & feature_settings ) {
+        _feature_settings = feature_settings;
+        _hash = 0;
+        #if USE_HARFBUZZ==1
+        setupHBFeatures();
+        clearCache();
+        #endif
     }
 
     virtual void setKerningMode( kerning_mode_t kerningMode ) {
@@ -5698,6 +5734,7 @@ public:
                     -1, // OpenType features = -1 for not yet instantiated fonts
                     fontFamily,
                     face,
+                    lString8::empty_str,
                     index
                 );
                 CRLog::debug("FONTCONFIG: Font family:%s style:%s weight:%d slant:%d spacing:%d file:%s",
@@ -5836,6 +5873,7 @@ public:
             -1, // OpenType features = -1 for not yet instantiated fonts
             css_ff_inherit,
             facename,
+            lString8::empty_str,
             -1,
             id
         );
@@ -5848,6 +5886,7 @@ public:
             -1, // OpenType features = -1 for not yet instantiated fonts
             css_ff_inherit,
             alias,
+            lString8::empty_str,
             -1,
             id
         );
@@ -5891,6 +5930,7 @@ public:
                     -1, // OpenType features = -1 for not yet instantiated fonts
                     fontFamily,
                     alias,
+                    lString8::empty_str,
                     index,
                     id
             );
@@ -5932,7 +5972,7 @@ public:
     }
 
     virtual LVFontRef GetFont(int size, int weight, bool italic, css_font_family_t family, lString8 typeface,
-                                int features, int documentId, bool useBias=false)
+                                int features, lString8 feature_settings, int documentId, bool useBias=false)
     {
         FONT_MAN_GUARD
         #if (DEBUG_FONT_MAN==1)
@@ -5950,6 +5990,7 @@ public:
             features,
             family,
             typeface,
+            feature_settings,
             -1,
             documentId
         );
@@ -5989,6 +6030,9 @@ public:
             if ( item->getDef()->getFeatures() != features ) {
                 // Be sure we ignore any instantiated font found in cache that
                 // has features different than the ones requested.
+            }
+            else if ( item->getDef()->getFeatureSettings() != feature_settings ) {
+                // Ignore cached instance with different font-feature-settings
             }
             else {
             #ifdef USE_FT_EMBOLDEN
@@ -6063,7 +6107,9 @@ public:
             LVFontRef ref(font);
             // Instantiate this font with the requested OpenType features
             newDef.setFeatures( features );
+            newDef.setFeatureSettings( feature_settings );
             font->setFeatures( features ); // followup setKerningMode() will create/update hb_features if needed
+            font->setFeatureSettings( feature_settings );
             font->setKerningMode( GetKerningMode() );
             font->setFaceName( item->getDef()->getTypeFace() );
             newDef.setSize( size );
@@ -6258,6 +6304,7 @@ public:
                 -1, // OpenType features = -1 for not yet instantiated fonts
                 fontFamily,
                 familyName,
+                lString8::empty_str,
                 index,
                 documentId,
                 buf
@@ -6366,6 +6413,7 @@ public:
                 -1, // OpenType features = -1 for not yet instantiated fonts
                 fontFamily,
                 family_name,
+                lString8::empty_str,
                 index,
                 documentId
             );
@@ -6479,6 +6527,7 @@ public:
                 -1, // OpenType features = -1 for not yet instantiated fonts
                 fontFamily,
                 familyName,
+                lString8::empty_str,
                 index
             );
             def.setHasEmojis( checkForEmojis(face) );
@@ -6571,8 +6620,9 @@ public:
         return filename;
     }
     virtual LVFontRef GetFont(int size, int weight, bool italic, css_font_family_t family, lString8 typeface,
-                                int features, int documentId, bool useBias=false)
+                                int features, lString8 feature_settings, int documentId, bool useBias=false)
     {
+        CR_UNUSED2(features, feature_settings);
         LVFontDef * def = new LVFontDef(
             lString8::empty_str,
             size,
@@ -6581,8 +6631,9 @@ public:
             0,
             family,
             typeface,
-            documentId,
-            useBias
+            lString8::empty_str,
+            -1,
+            documentId
         );
         //fprintf( _log, "GetFont: %s %d %s %s\n",
         //    typeface.c_str(),
@@ -6639,7 +6690,8 @@ public:
                 hdr.flgItalic?true:false,
                 -1,
                 (css_font_family_t)hdr.fontFamily,
-                lString8(hdr.fontName)
+                lString8(hdr.fontName),
+                lString8::empty_str
             );
             //fprintf( _log, "Register: %s %s %d %s %s\n",
             //    name.c_str(), hdr.fontName,
@@ -6702,8 +6754,10 @@ public:
     {
         _cache.gc();
     }
-    virtual LVFontRef GetFont(int size, int weight, bool bitalic, css_font_family_t family, lString8 typeface )
+    virtual LVFontRef GetFont(int size, int weight, bool bitalic, css_font_family_t family, lString8 typeface,
+                                int features, lString8 feature_settings, int documentId, bool useBias=false)
     {
+        CR_UNUSED4(features, feature_settings, documentId, useBias);
         int italic = bitalic?1:0;
         if (size<8)
             size = 8;
@@ -6717,7 +6771,8 @@ public:
             italic,
             0,
             family,
-            typeface
+            typeface,
+            lString8::empty_str
         );
 
         //fprintf( _log, "GetFont: %s %d %s %s\n",
@@ -6740,7 +6795,10 @@ public:
 
         LVFontDef * fdef = item->getDef();
         LVFontDef def2( fdef->getName(), size, weight, italic,
-            fdef->getFamily(), fdef->getTypeFace() );
+            0,
+            fdef->getFamily(),
+            fdef->getTypeFace(),
+            lString8::empty_str );
 
         if ( font->Create(size, weight, italic?true:false, fdef->getFamily(), fdef->getTypeFace()) )
         {
@@ -6788,7 +6846,8 @@ public:
             -1, //lf->lfItalic!=0,
             -1,
             ff,
-            face
+            face,
+            lString8::empty_str
         );
         _cache.update( &def, LVFontRef(NULL) );
         return true;
