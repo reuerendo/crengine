@@ -3933,6 +3933,7 @@ ldomDocument::ldomDocument()
 , _doc_pages(NULL)
 #endif
 , lists(100)
+, _firstLineStyles(100)
 {
     _docIndex = ldomNode::registerDocument(this);
     ldomNode* node = allocTinyElement(NULL, 0, 0);
@@ -3985,6 +3986,7 @@ ldomDocument::ldomDocument( ldomDocument & doc )
 #endif
 , _container(doc._container)
 , lists(100)
+, _firstLineStyles(100)
 {
     _docIndex = ldomNode::registerDocument(this);
 }
@@ -5204,7 +5206,7 @@ void tinyNodeCollection::dropStyles()
     _styles.clear(-1);
     _fonts.clear(-1);
     resetNodeNumberingProps();
-    resetNodeFirstLineStyles();
+    ((ldomDocument*)this)->resetNodeFirstLineStyles();
 
     int count = ((_elemCount+TNC_PART_LEN-1) >> TNC_PART_SHIFT);
     for ( int i=0; i<count; i++ ) {
