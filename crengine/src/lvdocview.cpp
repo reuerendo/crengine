@@ -220,9 +220,9 @@ LVDocView::LVDocView(int bitsPerPixel, bool noDefaultDocument) :
 
     m_font_size = scaleFontSizeForDPI(m_requested_font_size);
     m_font = fontMan->GetFont(m_font_size, 400, false, DEFAULT_FONT_FAMILY,
-			m_defaultFontFace);
+			m_defaultFontFace, 0, lString8::empty_str);
 	m_infoFont = fontMan->GetFont(m_status_font_size, 700, false,
-			DEFAULT_FONT_FAMILY, m_statusFontFace);
+			DEFAULT_FONT_FAMILY, m_statusFontFace, 0, lString8::empty_str);
 #ifdef ANDROID
 	//m_batteryFont = fontMan->GetFont( 20, 700, false, DEFAULT_FONT_FAMILY, m_statusFontFace );
 #endif
@@ -1109,11 +1109,11 @@ void LVDocView::drawCoverTo(LVDrawBuf * drawBuf, lvRect & rc) {
 		base_font_size = 24;
 	//CRLog::trace("drawCoverTo() - loading fonts...");
 	LVFontRef author_fnt(fontMan->GetFont(base_font_size, 700, false,
-            css_ff_serif, cs8("Times New Roman")));
+            css_ff_serif, cs8("Times New Roman"), 0, lString8::empty_str));
 	LVFontRef title_fnt(fontMan->GetFont(base_font_size + 4, 700, false,
-            css_ff_serif, cs8("Times New Roman")));
+            css_ff_serif, cs8("Times New Roman"), 0, lString8::empty_str));
 	LVFontRef series_fnt(fontMan->GetFont(base_font_size - 3, 400, true,
-            css_ff_serif, cs8("Times New Roman")));
+            css_ff_serif, cs8("Times New Roman"), 0, lString8::empty_str));
 	lString32 authors = getAltAuthorsOrAuthors();
 	lString32 title = getAltTitleOrTitle();
 	lString32 series = getAltSeriesOrSeries();
@@ -3030,10 +3030,10 @@ void LVDocView::setRenderProps(int dx, int dy) {
 	lString8 fontName = lString8(DEFAULT_FONT_NAME);
 	m_font_size = scaleFontSizeForDPI(m_requested_font_size);
 	m_font = fontMan->GetFont(m_font_size, LVRendGetBaseFontWeight(),
-			false, DEFAULT_FONT_FAMILY, m_defaultFontFace);
+			false, DEFAULT_FONT_FAMILY, m_defaultFontFace, 0, lString8::empty_str);
 	//m_font = LVCreateFontTransform( m_font, LVFONT_TRANSFORM_EMBOLDEN );
 	m_infoFont = fontMan->GetFont(m_status_font_size, 400, false,
-			DEFAULT_FONT_FAMILY, m_statusFontFace);
+			DEFAULT_FONT_FAMILY, m_statusFontFace, 0, lString8::empty_str);
 	if (!m_font || !m_infoFont)
 		return;
 
@@ -3810,7 +3810,7 @@ void LVDocView::setStatusFontSize(int newSize) {
 	if (oldSize != newSize) {
 		propsGetCurrent()->setInt(PROP_STATUS_FONT_SIZE, m_status_font_size);
 		m_infoFont = fontMan->GetFont(m_status_font_size, 400, false,
-			DEFAULT_FONT_FAMILY, m_statusFontFace);
+			DEFAULT_FONT_FAMILY, m_statusFontFace, 0, lString8::empty_str);
         REQUEST_RENDER("setStatusFontSize")
 	}
 	//goToBookmark(_posBookmark);
@@ -3865,7 +3865,7 @@ void LVDocView::setDefaultFontFace(const lString8 & newFace) {
 void LVDocView::setStatusFontFace(const lString8 & newFace) {
 	m_statusFontFace = newFace;
 	m_infoFont = fontMan->GetFont(m_status_font_size, 400, false,
-			DEFAULT_FONT_FAMILY, m_statusFontFace);
+			DEFAULT_FONT_FAMILY, m_statusFontFace, 0, lString8::empty_str);
     REQUEST_RENDER("setStatusFontFace")
 }
 
@@ -3912,7 +3912,7 @@ void LVDocView::ZoomFont(int delta) {
 	for (int i=0; i<15; i++)
 	{
 		sz += delta;
-		nfnt = fontMan->GetFont( sz, 400, false, DEFAULT_FONT_FAMILY, lString8(DEFAULT_FONT_NAME) );
+		nfnt = fontMan->GetFont( sz, 400, false, DEFAULT_FONT_FAMILY, lString8(DEFAULT_FONT_NAME), 0, lString8::empty_str );
 		if ( !nfnt.isNull() && nfnt->getHeight() != m_font->getHeight() )
 		{
 			// found!
@@ -7477,7 +7477,7 @@ void LVDrawBookCover(LVDrawBuf & buf, LVImageSourceRef image, bool respectAspect
     buf.FillRect(rc3, palette->vline);
 
 
-	LVFontRef fnt = fontMan->GetFont(16, 400, false, css_ff_sans_serif, fontFace, 0, -1); // = fontMan
+	LVFontRef fnt = fontMan->GetFont(16, 400, false, css_ff_sans_serif, fontFace, 0, lString8::empty_str, -1); // = fontMan
 	if (!fnt.isNull()) {
 
 		rc.left += rc.width() / 10;
