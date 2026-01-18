@@ -1587,7 +1587,7 @@ public:
         if ( other_font->getSize() == other_adjusted_size )
             return other_font;
         return fontMan->GetFont(other_adjusted_size, other_font->getWeight(), other_font->getItalic()!=0,
-                            other_font->getFontFamily(), other_font->getTypeFace(), other_font->getFeatures(), -1);
+                            other_font->getFontFamily(), other_font->getTypeFace(), other_font->getFeatures(), lString8::empty_str, -1);
     }
 
     int getXHeight() {
@@ -1627,7 +1627,7 @@ public:
                 getFontFamily(),
                 getTypeFace(),
                 getFeatures() | LFNT_OT_FEATURES_P_TNUM,
-                -1, false);
+                lString8::empty_str, -1, false);
             if ( _DecimalListItemFont.isNull() ) // shouldn't happen
                 _DecimalListItemFont = LVFontRef(this);
         }
@@ -1649,7 +1649,7 @@ public:
             getFontFamily(),
             preferred_bullet_fonts,   // We can provide a list, fontMan->GetFont() will split t and look for each
             0,    // no feature needed
-            -1, false);
+            lString8::empty_str, -1, false);
         if ( _BulletListItemFont.isNull() ) { // shouldn't happen
             _BulletListItemFont = LVFontRef(this);
         }
@@ -5397,7 +5397,7 @@ public:
         LVFontCacheItem * item = _cache.findFallback( _fallbackFontFaces[0], size );
         if ( !item->getFont().isNull() )
             return item->getFont();
-        return GetFont(size, 400, false, css_ff_sans_serif, _fallbackFontFaces[0], 0, -1);
+        return GetFont(size, 400, false, css_ff_sans_serif, _fallbackFontFaces[0], 0, lString8::empty_str, -1);
     }
 
     /// returns fallback font for specified size, weight and italic
@@ -5432,7 +5432,7 @@ public:
         // assuming the fallback font is a standalone regular font
         // without any bold/italic sibling.
         // GetFont() works just as fine when we need specified weigh and italic.
-        return GetFont(size, weight, italic, css_ff_sans_serif, _fallbackFontFaces[idx], 0, -1);
+        return GetFont(size, weight, italic, css_ff_sans_serif, _fallbackFontFaces[idx], 0, lString8::empty_str, -1);
     }
 
     bool isBitmapModeForSize( int size )
