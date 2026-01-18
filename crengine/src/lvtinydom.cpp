@@ -21470,9 +21470,9 @@ void runBasicTinyDomUnitTests()
 
     CRLog::info("* font cache");
     {
-        font_ref_t font1 = fontMan->GetFont(24, 400, false, css_ff_sans_serif, cs8("DejaVu Sans"));
-        font_ref_t font2 = fontMan->GetFont(24, 400, false, css_ff_sans_serif, cs8("DejaVu Sans"));
-        font_ref_t font3 = fontMan->GetFont(28, 800, false, css_ff_serif, cs8("DejaVu Sans Condensed"));
+        font_ref_t font1 = fontMan->GetFont(24, 400, false, css_ff_sans_serif, cs8("DejaVu Sans"), 0, lString8::empty_str);
+        font_ref_t font2 = fontMan->GetFont(24, 400, false, css_ff_sans_serif, cs8("DejaVu Sans"), 0, lString8::empty_str);
+        font_ref_t font3 = fontMan->GetFont(28, 800, false, css_ff_serif, cs8("DejaVu Sans Condensed"), 0, lString8::empty_str);
         MYASSERT(el1->getFont().isNull(), "font is not set");
         el1->setFont(font1);
         MYASSERT(!el1->getFont().isNull(), "font is set");
