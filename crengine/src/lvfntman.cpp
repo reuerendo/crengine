@@ -879,20 +879,19 @@ public:
         // and bold text with the font_base_weight setting set to its default value of 400.
         class BestCandidates {
             public:
-            LVFontCacheItem * regular;
-            LVFontCacheItem * regular_fake_italic;
-            LVFontCacheItem * regular_italic;
-            LVFontCacheItem * bold;
-            LVFontCacheItem * bold_fake_italic;
-            LVFontCacheItem * bold_italic;
-            BestCandidates()
-                : regular(NULL), regular_fake_italic(NULL), regular_italic(NULL)
-                , bold(NULL), bold_fake_italic(NULL), bold_italic(NULL)
-                { }
+            LVFontCacheItem * best400[3];
+            LVFontCacheItem * best700[3];
+            int real_weights_count[3];
+            bool has_real_400[3];
+            bool has_real_700[3];
+            BestCandidates() : best400{NULL,NULL,NULL}, best700{NULL,NULL,NULL}
+                             , real_weights_count{0,0,0}
+                             , has_real_400{false,false,false}
+                             , has_real_700{false,false,false} { }
             ~BestCandidates() { }
         };
-        // Find the best registered font for each typeface (weight 400|700 , italic 0|1|2)
-        // (each non-italic font got a clone with italic=2, in case fake italic is needed)
+        // Find the best registered font for each typeface at weights 400 and 700, for each
+        // italic category (0=regular, 1=real italic, 2=fake italic allowed).
         LVHashTable<lString8, BestCandidates*> typefaces(20);
         for ( int i=0; i<_registered_list.length(); i++ ) {
             LVFontCacheItem * font = _registered_list[i];
@@ -907,60 +906,106 @@ public:
                 best = new BestCandidates();
                 typefaces.set(name, best);
             }
-            LVFontCacheItem ** slot;
-            if ( weight < 700 ) {
-                if ( italic == 0 )
-                    slot = &best->regular;
-                else if ( italic == 1 )
-                    slot = &best->regular_italic;
-                else
-                    slot = &best->regular_fake_italic;
-                // We want the nearest to 400, but gives preference to 500 over 300 by comparing against 401
-                if ( *slot == NULL || (myabs(weight - 401) < myabs((*slot)->getDef()->getWeight() - 401)) ) {
-                    *slot = font;
+            if ( italic < 0 || italic > 2 )
+                italic = 0;
+
+            // Ignore fonts with fake weight: we want to base our aliases only on real fonts.
+            if ( !def->isRealWeight() )
+                continue;
+
+            // Count distinct real weights for this typeface & italic category.
+            // (We do it in a simple O(n^2) way: number of weights per typeface is small.)
+            bool already_counted = false;
+            for ( int j=0; j<i; j++ ) {
+                LVFontCacheItem * prev_font = _registered_list[j];
+                LVFontDef * prev_def = prev_font->getDef();
+                if (prev_def->getDocumentId() != -1)
+                    continue;
+                if ( !prev_def->isRealWeight() )
+                    continue;
+                if ( prev_def->getTypeFace() != name )
+                    continue;
+                int prev_italic = prev_def->getItalic() ? (prev_def->isRealItalic() ? 1 : 2) : 0;
+                if ( prev_italic != italic )
+                    continue;
+                if ( prev_def->getWeight() == weight ) {
+                    already_counted = true;
+                    break;
                 }
             }
+            if ( !already_counted )
+                best->real_weights_count[italic] += 1;
+
+            if ( weight == 400 )
+                best->has_real_400[italic] = true;
+            if ( weight == 700 )
+                best->has_real_700[italic] = true;
+
+            // Best for 400: nearest to 400, but gives preference to 500 over 300 by comparing against 401.
+            if ( best->best400[italic] == NULL || (myabs(weight - 401) < myabs(best->best400[italic]->getDef()->getWeight() - 401)) ) {
+                best->best400[italic] = font;
+            }
+            // Best for 700: nearest >=700; if none >=700 exists, we'll still pick the closest overall.
+            if ( best->best700[italic] == NULL ) {
+                best->best700[italic] = font;
+            }
             else {
-                if ( italic == 0 )
-                    slot = &best->bold;
-                else if ( italic == 1 )
-                    slot = &best->bold_italic;
-                else
-                    slot = &best->bold_fake_italic;
-                if ( *slot == NULL || (weight - 700 < (*slot)->getDef()->getWeight() - 700) ) {
-                    *slot = font;
+                int curw = best->best700[italic]->getDef()->getWeight();
+                if ( (weight >= 700 && curw < 700) ) {
+                    best->best700[italic] = font;
+                }
+                else if ( (weight >= 700) == (curw >= 700) ) {
+                    // If both are on same side of 700, pick the closest to 700.
+                    if ( myabs(weight - 700) < myabs(curw - 700) ) {
+                        best->best700[italic] = font;
+                    }
                 }
             }
         }
-        // Check each best candidates, and update their weight is it's not 400 or 700
+
+        // Apply requested regularization rules.
         LVHashTable<lString8, BestCandidates*>::iterator it = typefaces.forwardIterator();
         LVHashTable<lString8, BestCandidates*>::pair* pair;
         while ( (pair = it.next()) ) {
             lString8 name = pair->key;
             BestCandidates * best = pair->value;
-            if ( best->regular && best->regular->getDef()->getWeight() != 400 ) {
-                printf("CRE: font %s regular: updated weight from %d to 400\n", name.c_str(), best->regular->getDef()->getWeight());
-                best->regular->getDef()->setWeight(400);
-            }
-            if ( best->regular_italic && best->regular_italic->getDef()->getWeight() != 400 ) {
-                printf("CRE: font %s regular italic: updated weight from %d to 400\n", name.c_str(), best->regular_italic->getDef()->getWeight());
-                best->regular_italic->getDef()->setWeight(400);
-            }
-            if ( best->regular_fake_italic && best->regular_fake_italic->getDef()->getWeight() != 400 ) {
-                // No printf needed, as each non-italic get one of these
-                best->regular_fake_italic->getDef()->setWeight(400);
-            }
-            if ( best->bold && best->bold->getDef()->getWeight() != 700 ) {
-                printf("CRE: font %s bold: updated weight from %d to 700\n", name.c_str(), best->bold->getDef()->getWeight());
-                best->bold->getDef()->setWeight(700);
-            }
-            if ( best->bold_italic && best->bold_italic->getDef()->getWeight() != 700 ) {
-                printf("CRE: font %s bold italic: updated weight from %d to 700\n", name.c_str(), best->bold_italic->getDef()->getWeight());
-                best->bold_italic->getDef()->setWeight(700);
-            }
-            if ( best->bold_fake_italic && best->bold_fake_italic->getDef()->getWeight() != 700 ) {
-                // No printf needed, as each non-italic get one of these
-                best->bold_fake_italic->getDef()->setWeight(700);
+            for ( int italic=0; italic<3; italic++ ) {
+                int nb_weights = best->real_weights_count[italic];
+
+                // If only a couple weights are available, keep original behavior: collapse
+                // the best candidates onto 400 and 700.
+                bool do_original = ( nb_weights <= 2 );
+
+                // If more weights are available and real 400 and 700 exist, keep everything as-is.
+                bool do_nothing = ( nb_weights > 2 && best->has_real_400[italic] && best->has_real_700[italic] );
+
+                if ( do_nothing )
+                    continue;
+
+                // Otherwise, if real 400/700 are missing, regularize only the selected candidates.
+                // With <=2 weights, this will also apply (original behavior).
+                LVFontCacheItem * cand400 = best->best400[italic];
+                LVFontCacheItem * cand700 = best->best700[italic];
+                if ( cand400 && (!best->has_real_400[italic] || do_original) ) {
+                    int curw = cand400->getDef()->getWeight();
+                    if ( curw != 400 ) {
+                        if ( print_updates ) {
+                            const char * itname = italic==0 ? "" : (italic==1 ? " italic" : " fakeitalic");
+                            printf("CRE: font %s%s: updated weight from %d to 400\n", name.c_str(), itname, curw);
+                        }
+                        cand400->getDef()->setWeight(400);
+                    }
+                }
+                if ( cand700 && (!best->has_real_700[italic] || do_original) ) {
+                    int curw = cand700->getDef()->getWeight();
+                    if ( curw != 700 ) {
+                        if ( print_updates ) {
+                            const char * itname = italic==0 ? "" : (italic==1 ? " italic" : " fakeitalic");
+                            printf("CRE: font %s%s: updated weight from %d to 700\n", name.c_str(), itname, curw);
+                        }
+                        cand700->getDef()->setWeight(700);
+                    }
+                }
             }
 
             delete pair->value;
