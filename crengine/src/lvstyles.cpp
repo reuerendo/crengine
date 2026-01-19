@@ -45,84 +45,87 @@ lUInt32 calcHash(font_ref_t & f)
 lUInt32 calcHash(css_style_rec_t & rec)
 {
     if ( !rec.hash )
-        rec.hash = (((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((((
-         + (lUInt32)rec.important[0]) * 31
-         + (lUInt32)rec.important[1]) * 31
-         + (lUInt32)rec.important[2]) * 31
-         + (lUInt32)rec.importance[0]) * 31
-         + (lUInt32)rec.importance[1]) * 31
-         + (lUInt32)rec.importance[2]) * 31
-         + (lUInt32)rec.display) * 31
-         + (lUInt32)rec.white_space) * 31
-         + (lUInt32)rec.text_align) * 31
-         + (lUInt32)rec.text_align_last) * 31
-         + (lUInt32)rec.text_decoration) * 31
-         + (lUInt32)rec.text_transform) * 31
-         + (lUInt32)rec.hyphenate) * 31
-         + (lUInt32)rec.list_style_type) * 31
-         + (lUInt32)rec.letter_spacing.pack()) * 31
-         + (lUInt32)rec.list_style_position) * 31
-         + (lUInt32)(rec.page_break_before | (rec.page_break_after<<4) | (rec.page_break_inside<<8))) * 31
-         + (lUInt32)rec.vertical_align.pack()) * 31
-         + (lUInt32)rec.font_size.type) * 31
-         + (lUInt32)rec.font_size.value) * 31
-         + (lUInt32)rec.font_style) * 31
-         + (lUInt32)rec.font_weight) * 31
-         + (lUInt32)rec.font_features.pack()) * 31
-         + (lUInt32)rec.font_feature_settings_type) * 31
-         + (lUInt32)rec.font_feature_settings.getHash()) * 31
-         + (lUInt32)rec.line_height.pack()) * 31
-         + (lUInt32)rec.color.pack()) * 31
-         + (lUInt32)rec.background_color.pack()) * 31
-         + (lUInt32)rec.width.pack()) * 31
-         + (lUInt32)rec.height.pack()) * 31
-         + (lUInt32)rec.min_width.pack()) * 31
-         + (lUInt32)rec.min_height.pack()) * 31
-         + (lUInt32)rec.max_width.pack()) * 31
-         + (lUInt32)rec.max_height.pack()) * 31
-         + (lUInt32)rec.text_indent.pack()) * 31
-         + (lUInt32)rec.margin[0].pack()) * 31
-         + (lUInt32)rec.margin[1].pack()) * 31
-         + (lUInt32)rec.margin[2].pack()) * 31
-         + (lUInt32)rec.margin[3].pack()) * 31
-         + (lUInt32)rec.padding[0].pack()) * 31
-         + (lUInt32)rec.padding[1].pack()) * 31
-         + (lUInt32)rec.padding[2].pack()) * 31
-         + (lUInt32)rec.padding[3].pack()) * 31
-         + (lUInt32)rec.border_style_top) * 31
-         + (lUInt32)rec.border_style_right) * 31
-         + (lUInt32)rec.border_style_bottom) * 31
-         + (lUInt32)rec.border_style_left) * 31
-         + (lUInt32)rec.border_width[0].pack()) * 31
-         + (lUInt32)rec.border_width[1].pack()) * 31
-         + (lUInt32)rec.border_width[2].pack()) * 31
-         + (lUInt32)rec.border_width[3].pack()) * 31
-         + (lUInt32)rec.border_color[0].pack()) * 31
-         + (lUInt32)rec.border_color[1].pack()) * 31
-         + (lUInt32)rec.border_color[2].pack()) * 31
-         + (lUInt32)rec.border_color[3].pack()) * 31
-         + (lUInt32)rec.background_repeat)*31
-         + (lUInt32)rec.background_position)*31
-         + (lUInt32)rec.background_size[0].pack())*31
-         + (lUInt32)rec.background_size[1].pack())*31
-         + (lUInt32)rec.font_family) * 31
-         + (lUInt32)rec.border_collapse)*31
-         + (lUInt32)rec.border_spacing[0].pack())*31
-         + (lUInt32)rec.border_spacing[1].pack())*31
-         + (lUInt32)rec.orphans) * 31
-         + (lUInt32)rec.widows) * 31
-         + (lUInt32)rec.float_) * 31
-         + (lUInt32)rec.clear) * 31
-         + (lUInt32)rec.direction) * 31
-         + (lUInt32)rec.visibility) * 31
-         + (lUInt32)rec.line_break) * 31
-         + (lUInt32)rec.word_break) * 31
-         + (lUInt32)rec.box_sizing) * 31
-         + (lUInt32)rec.caption_side) * 31
-         + (lUInt32)rec.cr_hint.pack() * 31
-         + (lUInt32)rec.font_name.getHash()
-         + (lUInt32)rec.background_image.getHash()
-         + (lUInt32)rec.content.getHash());
+    {
+        lUInt32 h = 0;
+        h = h * 31 + (lUInt32)rec.important[0];
+        h = h * 31 + (lUInt32)rec.important[1];
+        h = h * 31 + (lUInt32)rec.important[2];
+        h = h * 31 + (lUInt32)rec.importance[0];
+        h = h * 31 + (lUInt32)rec.importance[1];
+        h = h * 31 + (lUInt32)rec.importance[2];
+        h = h * 31 + (lUInt32)rec.display;
+        h = h * 31 + (lUInt32)rec.white_space;
+        h = h * 31 + (lUInt32)rec.text_align;
+        h = h * 31 + (lUInt32)rec.text_align_last;
+        h = h * 31 + (lUInt32)rec.text_decoration;
+        h = h * 31 + (lUInt32)rec.text_transform;
+        h = h * 31 + (lUInt32)rec.hyphenate;
+        h = h * 31 + (lUInt32)rec.list_style_type;
+        h = h * 31 + (lUInt32)rec.letter_spacing.pack();
+        h = h * 31 + (lUInt32)rec.list_style_position;
+        h = h * 31 + (lUInt32)(rec.page_break_before | (rec.page_break_after<<4) | (rec.page_break_inside<<8));
+        h = h * 31 + (lUInt32)rec.vertical_align.pack();
+        h = h * 31 + (lUInt32)rec.font_size.type;
+        h = h * 31 + (lUInt32)rec.font_size.value;
+        h = h * 31 + (lUInt32)rec.font_style;
+        h = h * 31 + (lUInt32)rec.font_weight;
+        h = h * 31 + (lUInt32)rec.font_features.pack();
+        h = h * 31 + (lUInt32)rec.font_feature_settings_type;
+        h = h * 31 + (lUInt32)rec.font_feature_settings.getHash();
+        h = h * 31 + (lUInt32)rec.line_height.pack();
+        h = h * 31 + (lUInt32)rec.color.pack();
+        h = h * 31 + (lUInt32)rec.background_color.pack();
+        h = h * 31 + (lUInt32)rec.width.pack();
+        h = h * 31 + (lUInt32)rec.height.pack();
+        h = h * 31 + (lUInt32)rec.min_width.pack();
+        h = h * 31 + (lUInt32)rec.min_height.pack();
+        h = h * 31 + (lUInt32)rec.max_width.pack();
+        h = h * 31 + (lUInt32)rec.max_height.pack();
+        h = h * 31 + (lUInt32)rec.text_indent.pack();
+        h = h * 31 + (lUInt32)rec.margin[0].pack();
+        h = h * 31 + (lUInt32)rec.margin[1].pack();
+        h = h * 31 + (lUInt32)rec.margin[2].pack();
+        h = h * 31 + (lUInt32)rec.margin[3].pack();
+        h = h * 31 + (lUInt32)rec.padding[0].pack();
+        h = h * 31 + (lUInt32)rec.padding[1].pack();
+        h = h * 31 + (lUInt32)rec.padding[2].pack();
+        h = h * 31 + (lUInt32)rec.padding[3].pack();
+        h = h * 31 + (lUInt32)rec.border_style_top;
+        h = h * 31 + (lUInt32)rec.border_style_right;
+        h = h * 31 + (lUInt32)rec.border_style_bottom;
+        h = h * 31 + (lUInt32)rec.border_style_left;
+        h = h * 31 + (lUInt32)rec.border_width[0].pack();
+        h = h * 31 + (lUInt32)rec.border_width[1].pack();
+        h = h * 31 + (lUInt32)rec.border_width[2].pack();
+        h = h * 31 + (lUInt32)rec.border_width[3].pack();
+        h = h * 31 + (lUInt32)rec.border_color[0].pack();
+        h = h * 31 + (lUInt32)rec.border_color[1].pack();
+        h = h * 31 + (lUInt32)rec.border_color[2].pack();
+        h = h * 31 + (lUInt32)rec.border_color[3].pack();
+        h = h * 31 + (lUInt32)rec.background_repeat;
+        h = h * 31 + (lUInt32)rec.background_position;
+        h = h * 31 + (lUInt32)rec.background_size[0].pack();
+        h = h * 31 + (lUInt32)rec.background_size[1].pack();
+        h = h * 31 + (lUInt32)rec.font_family;
+        h = h * 31 + (lUInt32)rec.border_collapse;
+        h = h * 31 + (lUInt32)rec.border_spacing[0].pack();
+        h = h * 31 + (lUInt32)rec.border_spacing[1].pack();
+        h = h * 31 + (lUInt32)rec.orphans;
+        h = h * 31 + (lUInt32)rec.widows;
+        h = h * 31 + (lUInt32)rec.float_;
+        h = h * 31 + (lUInt32)rec.clear;
+        h = h * 31 + (lUInt32)rec.direction;
+        h = h * 31 + (lUInt32)rec.visibility;
+        h = h * 31 + (lUInt32)rec.line_break;
+        h = h * 31 + (lUInt32)rec.word_break;
+        h = h * 31 + (lUInt32)rec.box_sizing;
+        h = h * 31 + (lUInt32)rec.caption_side;
+        h = h * 31 + (lUInt32)rec.cr_hint.pack();
+        h = h * 31 + (lUInt32)rec.font_name.getHash();
+        h = h * 31 + (lUInt32)rec.background_image.getHash();
+        h = h * 31 + (lUInt32)rec.content.getHash();
+        rec.hash = h;
+    }
     return rec.hash;
 }
 
