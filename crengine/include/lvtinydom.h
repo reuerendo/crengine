@@ -2582,6 +2582,9 @@ private:
     /// load document cache file content
     bool loadCacheFileContent(CacheLoadingCallback * formatCallback, LVDocViewCallback * progressCallback=NULL);
 
+    bool saveFirstLineStylesData();
+    bool loadFirstLineStylesData();
+
     /// save changes to cache file
     bool saveChanges();
     /// saves changes to cache file, limited by time interval (can be called again to continue after TIMEOUT)

@@ -213,7 +213,8 @@ enum CacheFileBlockType {
     CBT_STYLE_DATA,
     CBT_BLOB_INDEX, //16
     CBT_BLOB_DATA,
-    CBT_FONT_DATA  //18
+    CBT_FONT_DATA,  //18
+    CBT_FIRSTLINE_STYLE_DATA //19
 };
 
 
@@ -16607,6 +16608,11 @@ bool ldomDocument::loadCacheFileContent(CacheLoadingCallback * formatCallback, L
         updateLoadedStyles( false );
     }
 
+    if ( !loadFirstLineStylesData() ) {
+        resetNodeFirstLineStyles();
+        _hdr.render_style_hash = 0;
+    }
+
     CRLog::trace("ldomDocument::loadCacheFileContent() - completed successfully");
     if (progressCallback) progressCallback->OnLoadFileProgress(95);
 
@@ -16620,6 +16626,70 @@ bool ldomDocument::loadCacheFileContent(CacheLoadingCallback * formatCallback, L
 }
 
 static const char * styles_magic = "CRSTYLES";
+
+static const char * firstline_styles_magic = "CRFLSTYL";
+
+bool ldomDocument::saveFirstLineStylesData()
+{
+    SerialBuf buf(0, true);
+    buf.putMagic(firstline_styles_magic);
+    lUInt32 count = (lUInt32)_firstLineStyles.length();
+    buf << count;
+    LVHashTable<lUInt32, css_style_ref_t>::iterator it = _firstLineStyles.forwardIterator();
+    LVHashTable<lUInt32, css_style_ref_t>::pair * p;
+    while ( (p = it.next()) ) {
+        buf << (lUInt32)p->key;
+        lUInt8 has_style = p->value.isNull() ? 0 : 1;
+        buf << has_style;
+        if ( has_style ) {
+            p->value->serialize(buf);
+        }
+    }
+    buf.putMagic(firstline_styles_magic);
+    if ( buf.error() )
+        return false;
+    if ( !_cacheFile->write( CBT_FIRSTLINE_STYLE_DATA, buf, COMPRESS_STYLE_DATA ) ) {
+        return false;
+    }
+    return !buf.error();
+}
+
+bool ldomDocument::loadFirstLineStylesData()
+{
+    SerialBuf buf(0, true);
+    if ( !_cacheFile->read( CBT_FIRSTLINE_STYLE_DATA, buf ) ) {
+        return false;
+    }
+    buf.checkMagic(firstline_styles_magic);
+    lUInt32 count = 0;
+    buf >> count;
+    if ( buf.error() )
+        return false;
+    _firstLineStyles.clear();
+    for ( lUInt32 i = 0; i < count; i++ ) {
+        lUInt32 key = 0;
+        buf >> key;
+        if ( buf.error() )
+            return false;
+        lUInt8 has_style = 0;
+        buf >> has_style;
+        if ( buf.error() )
+            return false;
+        if ( has_style ) {
+            css_style_ref_t rec( new css_style_rec_t() );
+            if ( !rec->deserialize(buf) )
+                return false;
+            _firstLineStyles.set(key, rec);
+        }
+        else {
+            _firstLineStyles.set(key, css_style_ref_t());
+        }
+    }
+    buf.checkMagic(firstline_styles_magic);
+    if ( buf.error() )
+        return false;
+    return true;
+}
 
 #define CHECK_EXPIRATION(s) \
     if ( maxTime.expired() ) { CRLog::info("timer expired while " s); return CR_TIMEOUT; }
@@ -16830,6 +16900,13 @@ ContinuousOperationResult ldomDocument::saveChanges( CRTimerUtil & maxTime, LVDo
             return CR_ERROR;
         }
         if (progressCallback) progressCallback->OnSaveCacheFileProgress(90);
+        // fall through
+    case 105:
+        _mapSavingStage = 105;
+        if ( !saveFirstLineStylesData() ) {
+            CRLog::error("Error while writing first-line style data");
+            return CR_ERROR;
+        }
         // fall through
     case 11:
         _mapSavingStage = 11;
