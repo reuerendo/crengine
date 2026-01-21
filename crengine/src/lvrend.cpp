@@ -10535,7 +10535,7 @@ inline bool inheritLength( css_length_t & val, css_length_t & parent_val, int pa
 
 void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef parent_font )
 {
-    CR_UNUSED(parent_font);
+    // parent_font is used by some callers, and can be NULL.
     //lvdomElementFormatRec * fmt = node->getRenderData();
     css_style_ref_t style( new css_style_rec_t );
     css_style_rec_t * pstyle = style.get();
@@ -10697,6 +10697,49 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
             // file path... So these won't work when defined in a style= attribute.
             if ( decl.parse( s, false, doc ) ) {
                 decl.apply( pstyle );
+            }
+        }
+    }
+
+    // initial-letter on ::first-letter
+    // We only support it on the actual pseudo element node (el_pseudoElem with attr_FirstLetter).
+    // Render it like a drop-cap: float:left, with auto font-size based on the parent line height,
+    // and apply sink by shifting it down via margin-top.
+    if ( nodeElementId == el_pseudoElem && enode->hasAttribute(attr_FirstLetter) ) {
+        lInt16 n = pstyle->initial_letter_size;
+        lInt16 m = pstyle->initial_letter_sink;
+        if ( n > 0 ) {
+            if ( m <= 0 )
+                m = n;
+            ldomNode * parent = enode->getUnboxedParent();
+            if ( parent && !parent->getStyle().isNull() ) {
+                LVFontRef pf = parent->getFont();
+                int base_font_size = lengthToPx(parent, parent_style->font_size, 0, 0);
+                if ( base_font_size < 1 )
+                    base_font_size = 1;
+                int line_height_px = 0;
+                if ( !pf.isNull() ) {
+                    line_height_px = pf->getHeight();
+                }
+                if ( line_height_px < 1 ) {
+                    line_height_px = lengthToPx(parent, parent_style->line_height, base_font_size);
+                }
+                if ( line_height_px < 1 )
+                    line_height_px = base_font_size;
+
+                int target_font_px = n * line_height_px;
+                if ( target_font_px < 1 )
+                    target_font_px = 1;
+
+                pstyle->float_ = css_f_left;
+                pstyle->font_size.type = css_val_screen_px;
+                pstyle->font_size.value = target_font_px;
+
+                int sink_delta = (m - n) * line_height_px;
+                if ( sink_delta != 0 ) {
+                    pstyle->margin[2].type = css_val_screen_px;
+                    pstyle->margin[2].value = sink_delta;
+                }
             }
         }
     }

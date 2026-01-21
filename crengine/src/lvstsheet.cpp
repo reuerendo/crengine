@@ -138,6 +138,7 @@ enum css_decl_code {
     cssd_box_sizing,
     cssd_caption_side,
     cssd_content,
+    cssd_initial_letter,
     cssd_cr_ignore_if_dom_version_greater_or_equal,
     cssd_cr_hint,
     cssd_cr_only_if,
@@ -248,6 +249,7 @@ static const char * css_decl_name[] = {
     "box-sizing",
     "caption-side",
     "content",
+    "initial-letter",
     "-cr-ignore-if-dom-version-greater-or-equal",
     "-cr-hint",
     "-cr-only-if",
@@ -3605,6 +3607,46 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
             case cssd_cr_apply_func:
                 n = parse_name( decl, css_cr_apply_func_names, -1 );
                 break;
+            case cssd_initial_letter:
+                // CSS Inline Layout: initial-letter: <number> <number>?
+                // We only support integer values. 0 or negative disables.
+                // When the second value (sink) is omitted, it defaults to size.
+                IF_g_SET_n_AND_break(false, 0, 0);
+                {
+                    unsigned size_u = 0;
+                    unsigned sink_u = 0;
+                    if ( !parse_integer( decl, size_u ) ) {
+                        n = -1;
+                        break;
+                    }
+                    skip_spaces( decl );
+                    if ( *decl != ';' && *decl != stop_char ) {
+                        // Try parse optional sink
+                        if ( parse_integer( decl, sink_u ) ) {
+                            // ok
+                        }
+                        else {
+                            sink_u = size_u;
+                        }
+                    }
+                    else {
+                        sink_u = size_u;
+                    }
+                    // clamp to signed 16-bit range used by style
+                    if ( size_u > 32767 ) size_u = 32767;
+                    if ( sink_u > 32767 ) sink_u = 32767;
+
+                    // Push immediately here (cssd_initial_letter is special: it stores 2 ints)
+                    buf<<(lUInt32) (prop_code | importance | parse_important(decl));
+                    buf<<(lUInt32) (lInt16)size_u;
+                    buf<<(lUInt32) (lInt16)sink_u;
+
+                    // Prevent the generic "if (n != -1)" logic below from serializing again.
+                    n = -1;
+                    // We have fully handled buffer write for this property.
+                    skip_to_next_property = false;
+                }
+                break;
             case cssd_display:
                 IF_g_SET_n_AND_break(false, css_d_inherit, css_d_inline);
                 n = parse_name( decl, css_d_names, -1 );
@@ -5132,6 +5174,15 @@ void LVCssDeclaration::apply( css_style_rec_t * style, const ldomNode * node ) c
         case cssd_text_transform:
             style->Apply( (css_text_transform_t) *p++, &style->text_transform, imp_bit_text_transform, is_important );
             style->flags |= STYLE_REC_FLAG_INHERITABLE_APPLIED;
+            break;
+        case cssd_initial_letter:
+            {
+                lInt16 size = (lInt16)*p++;
+                lInt16 sink = (lInt16)*p++;
+                style->Apply( size, &style->initial_letter_size, imp_bit_initial_letter_size, is_important );
+                style->Apply( sink, &style->initial_letter_sink, imp_bit_initial_letter_sink, is_important );
+                // Not inheritable
+            }
             break;
         case cssd_hyphenate:
             style->Apply( (css_hyphenate_t) *p++, &style->hyphenate, imp_bit_hyphenate, is_important );
