@@ -10778,17 +10778,30 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
                 int base_font_size = lengthToPx(parent, parent_style->font_size, 0, 0);
                 if ( base_font_size < 1 )
                     base_font_size = 1;
-                int line_height_px = 0;
-                if ( !pf.isNull() ) {
-                    line_height_px = pf->getHeight();
-                }
+
+                // Use computed CSS line-height when available (often larger than font height).
+                int line_height_px = lengthToPx(parent, parent_style->line_height, base_font_size, base_font_size, true);
                 if ( line_height_px < 1 ) {
-                    line_height_px = lengthToPx(parent, parent_style->line_height, base_font_size);
+                    if ( !pf.isNull() )
+                        line_height_px = pf->getHeight();
                 }
                 if ( line_height_px < 1 )
                     line_height_px = base_font_size;
 
-                int target_font_px = n * line_height_px;
+                // Target block height is n lines.
+                int target_height_px = n * line_height_px;
+                if ( target_height_px < 1 )
+                    target_height_px = 1;
+
+                // Scale font-size so that font height ~= target_height_px.
+                int target_font_px = target_height_px;
+                if ( !pf.isNull() ) {
+                    int pf_height = pf->getHeight();
+                    int pf_size = pf->getSize();
+                    if ( pf_height > 0 && pf_size > 0 ) {
+                        target_font_px = (target_height_px * pf_size + pf_height/2) / pf_height;
+                    }
+                }
                 if ( target_font_px < 1 )
                     target_font_px = 1;
 
@@ -10796,10 +10809,22 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
                 pstyle->font_size.type = css_val_screen_px;
                 pstyle->font_size.value = target_font_px;
 
-                int sink_delta = (m - n) * line_height_px;
-                if ( sink_delta != 0 ) {
+                // Baseline alignment: align dropcap baseline with baseline of line m.
+                // Approximate dropcap baseline scaling using parent font metrics.
+                int margin_top_px = 0;
+                if ( !pf.isNull() ) {
+                    int pf_baseline = pf->getBaseline();
+                    int pf_size = pf->getSize();
+                    if ( pf_baseline > 0 && pf_size > 0 ) {
+                        int drop_baseline = (target_font_px * pf_baseline + pf_size/2) / pf_size;
+                        int target_baseline = pf_baseline + (m - 1) * line_height_px;
+                        margin_top_px = target_baseline - drop_baseline;
+                    }
+                }
+                if ( margin_top_px != 0 ) {
+                    // margin[2] is margin-top (see lvstyles.h)
                     pstyle->margin[2].type = css_val_screen_px;
-                    pstyle->margin[2].value = sink_delta;
+                    pstyle->margin[2].value = margin_top_px;
                 }
             }
         }
