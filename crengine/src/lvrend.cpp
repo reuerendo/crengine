@@ -10821,6 +10821,24 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
                 pstyle->font_size.type = css_val_screen_px;
                 pstyle->font_size.value = target_font_px;
 
+                // Avoid extra empty space below the drop cap due to font descent.
+                // Float box height will include descent, while CSS initial-letter sizing
+                // is based on baseline->cap-height. Compensate with a negative margin-bottom.
+                if ( !pf.isNull() ) {
+                    int pf_height = pf->getHeight();
+                    int pf_baseline = pf->getBaseline();
+                    int pf_size = pf->getSize();
+                    int base_descent = pf_height - pf_baseline;
+                    if ( base_descent > 0 && pf_size > 0 ) {
+                        int descent_px = (target_font_px * base_descent + pf_size/2) / pf_size;
+                        if ( descent_px > 0 ) {
+                            // margin[3] is margin-bottom (see lvstyles.h)
+                            pstyle->margin[3].type = css_val_screen_px;
+                            pstyle->margin[3].value = -descent_px;
+                        }
+                    }
+                }
+
                 // Baseline alignment: align dropcap baseline with the baseline of line m.
                 // (m==1 => raised cap, m==n => drop cap with baseline on last line)
                 int margin_top_px = 0;
