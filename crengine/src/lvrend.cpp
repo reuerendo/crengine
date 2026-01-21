@@ -10732,13 +10732,25 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
                 if ( target_height_px < 1 )
                     target_height_px = 1;
 
-                // Scale font-size so that font height ~= target_height_px.
+                // Scale font-size so that cap-height (baseline->cap) ~= target_height_px.
+                // We approximate cap-height using glyph metrics for 'H'.
                 int target_font_px = target_height_px;
+                int base_size = 0;
+                int base_baseline = 0;
+                int base_cap_height = 0;
                 if ( !pf.isNull() ) {
-                    int pf_height = pf->getHeight();
-                    int pf_size = pf->getSize();
-                    if ( pf_height > 0 && pf_size > 0 ) {
-                        target_font_px = (target_height_px * pf_size + pf_height/2) / pf_height;
+                    base_size = pf->getSize();
+                    base_baseline = pf->getBaseline();
+                    LVFont::glyph_info_t gi;
+                    if ( base_size > 0 && pf->getGlyphInfo((lUInt32)(lChar32)'H', &gi) ) {
+                        base_cap_height = gi.originY; // baseline -> top of glyph bbox
+                    }
+                    if ( base_cap_height <= 0 ) {
+                        // Fallback: use baseline as an approximation.
+                        base_cap_height = base_baseline;
+                    }
+                    if ( base_cap_height > 0 ) {
+                        target_font_px = (target_height_px * base_size + base_cap_height/2) / base_cap_height;
                     }
                 }
                 if ( target_font_px < 1 )
@@ -10748,15 +10760,16 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
                 pstyle->font_size.type = css_val_screen_px;
                 pstyle->font_size.value = target_font_px;
 
-                // Baseline alignment: align dropcap baseline with baseline of line m.
-                // Approximate dropcap baseline scaling using parent font metrics.
+                // Baseline alignment: align dropcap baseline with the baseline of line m.
+                // (m==1 => raised cap, m==n => drop cap with baseline on last line)
                 int margin_top_px = 0;
                 if ( !pf.isNull() ) {
-                    int pf_baseline = pf->getBaseline();
+                    int target_baseline = pf->getBaseline() + (m - 1) * line_height_px;
+                    int drop_baseline = 0;
                     int pf_size = pf->getSize();
-                    if ( pf_baseline > 0 && pf_size > 0 ) {
-                        int drop_baseline = (target_font_px * pf_baseline + pf_size/2) / pf_size;
-                        int target_baseline = pf_baseline + (m - 1) * line_height_px;
+                    int pf_baseline = pf->getBaseline();
+                    if ( pf_size > 0 && pf_baseline > 0 ) {
+                        drop_baseline = (target_font_px * pf_baseline + pf_size/2) / pf_size;
                         margin_top_px = target_baseline - drop_baseline;
                     }
                 }
