@@ -10870,7 +10870,8 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 					// For floats, the positioning origin is effectively the baseline of the
 					// first line (not the line box top). So, align to the baseline of line m
 					// by applying a baseline-to-baseline offset.
-					int target_baseline = (m - 1) * line_height_px;
+					int half_leading = (line_height_px - pf->getHeight()) / 2;
+					int target_baseline = (m - 1) * line_height_px + half_leading;
 					int drop_baseline = 0;
 					int pf_size = pf->getSize();
 					int pf_baseline = pf->getBaseline();
