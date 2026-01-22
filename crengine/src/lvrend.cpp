@@ -10780,9 +10780,12 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 				pstyle->font_size.type = css_val_screen_px;
 				pstyle->font_size.value = target_font_px;
 
+				// --- POSITIONING CODE COMMENTED OUT ---
+				
 				// Avoid extra empty space below the drop cap due to font descent.
 				// Float box height will include descent, while CSS initial-letter sizing
 				// is based on baseline->cap-height. Compensate with a negative margin-bottom.
+				/*
 				if ( !pf.isNull() ) {
 					int pf_height = pf->getHeight();
 					int pf_baseline = pf->getBaseline();
@@ -10797,12 +10800,14 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 						}
 					}
 				}
+				*/
 
 				// Baseline alignment: align dropcap baseline with the baseline of line m.
 				// (m==1 => raised cap, m==n => drop cap with baseline on last line)
+				/*
 				int margin_top_px = 0;
 				if ( !pf.isNull() ) {
-					int target_baseline = (m - 1) * line_height_px + base_baseline;
+					int target_baseline = (m - 1) * line_height_px;
 					int drop_baseline = 0;
 					int pf_size = pf->getSize();
 					int pf_baseline = pf->getBaseline();
@@ -10817,6 +10822,7 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 					pstyle->margin[2].type = css_val_screen_px;
 					pstyle->margin[2].value = margin_top_px;
 				}
+				*/
 			}
 		}
 	}
