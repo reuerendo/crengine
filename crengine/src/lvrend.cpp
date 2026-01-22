@@ -10780,8 +10780,30 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 					base_font_size = 1;
 
 				// Use computed CSS line-height when available (often larger than font height).
-				int line_height_px = lengthToPx(parent, parent_style->line_height,
-												base_font_size, base_font_size, true);
+				// Match main text rendering behavior, including KOReader interline scaling.
+				int line_height_px = -1;
+				if ( parent_style->line_height.type == css_val_unspecified &&
+							parent_style->line_height.value == css_generic_normal ) {
+					if ( !pf.isNull() )
+						line_height_px = pf->getHeight(); // line-height: normal
+					// Scale line-height according to document's _interlineScaleFactor
+					// (this is also applied to 'normal' in main text rendering).
+					int interline_scale_factor = doc->getInterlineScaleFactor();
+					if ( interline_scale_factor != INTERLINE_SCALE_FACTOR_NO_SCALE ) {
+						line_height_px = (line_height_px * interline_scale_factor) >> INTERLINE_SCALE_FACTOR_SHIFT;
+					}
+				}
+				else {
+					line_height_px = lengthToPx(parent, parent_style->line_height,
+											base_font_size, base_font_size, true);
+					// Scale line-height according to document's _interlineScaleFactor, but
+					// not if it was already in screen_px (already scaled when inherited).
+					int interline_scale_factor = doc->getInterlineScaleFactor();
+					if ( parent_style->line_height.type != css_val_screen_px &&
+								interline_scale_factor != INTERLINE_SCALE_FACTOR_NO_SCALE ) {
+						line_height_px = (line_height_px * interline_scale_factor) >> INTERLINE_SCALE_FACTOR_SHIFT;
+					}
+				}
 				if ( line_height_px < 1 ) {
 					if ( !pf.isNull() )
 						line_height_px = pf->getHeight();
@@ -10811,7 +10833,7 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 					}
 
 					// x-height from 'x'
-					if ( base_size > 0 && pf->getGlyphInfo((lUInt32)(lChar32)'H', &gi) ) {
+					if ( base_size > 0 && pf->getGlyphInfo((lUInt32)(lChar32)'x', &gi) ) {
 						base_x_height = gi.originY;
 					}
 					// Fallback: approximate x-height if missing
