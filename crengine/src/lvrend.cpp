@@ -10831,7 +10831,8 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 					// Floats are positioned by the formatter with a Y origin that behaves like
 					// the baseline of the first line. Align to the baseline of line m via a
 					// baseline-to-baseline offset.
-					int target_baseline = (m - 1) * line_height_px;
+					int half_leading = (line_height_px - pf->getHeight()) / 2;
+					int target_baseline = (m - 1) * line_height_px + half_leading;
 					int drop_baseline = 0;
 					LVFontRef drop_font = getFont(enode, pstyle, doc->getDocIndex());
 					if ( !drop_font.isNull() ) {
