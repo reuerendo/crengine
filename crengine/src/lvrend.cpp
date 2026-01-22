@@ -10835,11 +10835,10 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 					int strut_baseline = pf->getBaseline() + half_leading;
 					int target_baseline = (m - 1) * line_height_px + strut_baseline;
 					int drop_baseline = 0;
-					int pf_size = pf->getSize();
-					int pf_baseline = pf->getBaseline();
-					if ( pf_size > 0 && pf_baseline > 0 ) {
-						drop_baseline =
-							(target_font_px * pf_baseline + pf_size/2) / pf_size;
+					LVFontRef drop_font = getFont(enode, pstyle, doc->getDocIndex());
+					if ( !drop_font.isNull() ) {
+						int drop_half_leading = (line_height_px - drop_font->getHeight()) / 2;
+						drop_baseline = drop_font->getBaseline() + drop_half_leading;
 						margin_top_px = target_baseline - drop_baseline;
 					}
 				}
