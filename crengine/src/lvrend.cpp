@@ -10893,7 +10893,8 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 					// first line (not the line box top). So, align to the baseline of line m
 					// by applying a baseline-to-baseline offset.
 					int half_leading = (line_height_px - pf->getHeight()) / 2;
-					int target_baseline = (m - 1) * line_height_px + half_leading;
+					int strut_baseline = pf->getBaseline() + half_leading;
+					int target_baseline = (m - 1) * line_height_px + strut_baseline;
 					int drop_baseline = 0;
 					int pf_size = pf->getSize();
 					int pf_baseline = pf->getBaseline();
