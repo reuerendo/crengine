@@ -10785,78 +10785,61 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
                 pstyle->font_size.type = css_val_screen_px;
                 pstyle->font_size.value = target_font_px;
 
-                // --- 4. Calculate Vertical Alignment (Margin Top) ---
-                // Goal: Align the top of the Drop Cap's Cap-Height with the top of the First Line's x-height.
-                //
-                // Coordinate logic (relative to the top of the first line box):
-                // A. Top of Body x-height = (BodyAscent - BodyXHeight).
-                //    If sink (m) > 1, we add (m-1) * LineHeight to this position.
-                //    Target_Y = (base_baseline - base_x_height) + (m - 1) * line_height_px.
-                //
-                // B. Drop Cap Box Structure:
-                //    The font box usually starts at 'Ascent' distance above the baseline.
-                //    Visual Top of Drop Cap = DropAscent - DropCapHeight.
-                //    There is an empty space (internal leading) at the top of the box:
-                //    Top_Gap = DropAscent - DropCapHeight.
-                //
-                // C. We need to shift the box via margin-top so that Visual Top aligns with Target_Y.
-                //    Margin_Top + Top_Gap = Target_Y
-                //    Margin_Top = Target_Y - Top_Gap
-
+                // --- 4. Vertical Alignment via Baseline ---
+                // The previous logic failed because it relied on the top of the box.
+                // Correct logic: Align the Drop Cap Baseline with the Baseline of the M-th line.
+                
                 int margin_top_px = 0;
                 if ( !pf.isNull() && base_size > 0 ) {
-                    // Calculate metric values for the NEW scaled font size
-                    // We assume the aspect ratio is the same as the base font (pf).
+                    // A. Calculate the position of the Target Baseline relative to the top of the paragraph.
+                    //    The first line's baseline is at 'base_baseline'.
+                    //    Each subsequent line adds 'line_height_px'.
+                    //    Target Baseline Y = base_baseline + (m - 1) * line_height_px.
+                    int target_baseline_y = base_baseline + (m - 1) * line_height_px;
+
+                    // B. Calculate the position of the Drop Cap's Baseline relative to its own box top.
+                    //    This is the scaled ascent.
+                    long long drop_baseline_calc = (long long)target_font_px * base_baseline;
+                    int drop_baseline_y = (int)((drop_baseline_calc + base_size / 2) / base_size);
+
+                    // C. Calculate margin-top.
+                    //    If the float is placed at Y=0 (top of paragraph) by default,
+                    //    we need to shift it so drop_baseline_y aligns with target_baseline_y.
+                    //    Box_Top + Drop_Baseline = Target_Baseline
+                    //    Margin_Top = Target_Baseline - Drop_Baseline
+                    //
+                    //    Example: If Target is at 50px, and Drop Baseline is at 80px (huge font),
+                    //    Margin Top = 50 - 80 = -30px (pull up). This is correct.
+                    margin_top_px = target_baseline_y - drop_baseline_y;
+
+                    // --- 5. Tight Wrapping (Border/Padding) ---
+                    // To ensure the border tightly wraps the glyph, we adjust the height.
+                    // Standard box height = Ascent + Descent.
+                    // Desired Visual Height = Cap-Height + Descent (or Bottom of Glyph).
+                    // We set the CSS height explicitly to cut off the top whitespace (Internal Leading).
                     
-                    // Scaled Ascent of the drop cap
-                    long long drop_ascent_calc = (long long)target_font_px * base_baseline;
-                    int drop_ascent = (int)((drop_ascent_calc + base_size / 2) / base_size);
+                    int base_descent = pf->getHeight() - base_baseline;
+                    long long drop_descent_calc = (long long)target_font_px * base_descent;
+                    int drop_descent = (int)((drop_descent_calc + base_size / 2) / base_size);
+                    
+                    // The desired box height is the Target Cap Height + Scaled Descent.
+                    int tight_height = target_cap_height_px + drop_descent;
 
-                    // Scaled Cap-Height of the drop cap (should be close to target_cap_height_px)
-                    long long drop_cap_h_calc = (long long)target_font_px * base_cap_height;
-                    int drop_cap_h = (int)((drop_cap_h_calc + base_size / 2) / base_size);
-
-                    // The gap between the physical top of the box and the visual top of the letter
-                    int top_gap = drop_ascent - drop_cap_h;
-
-                    // The target Y position relative to the paragraph top (Line 1 top)
-                    // (Top of the x-height on the m-th line)
-                    int target_y = (base_baseline - base_x_height) + (m - 1) * line_height_px;
-
-                    margin_top_px = target_y - top_gap;
+                    pstyle->height.type = css_val_screen_px;
+                    pstyle->height.value = tight_height;
+                    
+                    // Note: If the engine renders the glyph starting from the top of the content box
+                    // using the standard Ascent, setting a smaller height might just clip the bottom.
+                    // However, we rely on the margin-top to position the Baseline correctly.
+                    // If the border is drawn around this 'height', it will look correct at the bottom.
+                    // The top border might still be loose if the engine doesn't support 
+                    // shifting the glyph drawing origin. But positioning will be correct.
                 }
 
                 if ( margin_top_px != 0 ) {
                     // margin[2] is margin-top (see lvstyles.h)
                     pstyle->margin[2].type = css_val_screen_px;
                     pstyle->margin[2].value = margin_top_px;
-                }
-
-                // --- 5. Border and Box Fit ---
-                // The user requires the border/padding to "tightly wrap" the area.
-                // The standard font box height is Ascent + Descent.
-                // The visual height we care about is CapHeight + Descent (or glyph bottom).
-                // To make the border appear tight around the cap-height (ignoring the top gap),
-                // we can explicitly set the height if the engine supports it, or rely on margin adjustment.
-                // Note: Standard CSS 'height' on a text run might be ignored by some engines, 
-                // but setting it here helps if 'display: block/inline-block' logic is used.
-                
-                // Let's assume the render engine respects pstyle->height for floated elements.
-                if ( !pf.isNull() && base_size > 0 ) {
-                     // Get descent for the scaled font
-                     int base_descent = pf->getHeight() - base_baseline;
-                     long long drop_descent_calc = (long long)target_font_px * base_descent;
-                     int drop_descent = (int)((drop_descent_calc + base_size / 2) / base_size);
-
-                     // Tight height = Scaled CapHeight + Scaled Descent
-                     int tight_height = target_cap_height_px + drop_descent;
-                     
-                     pstyle->height.type = css_val_screen_px;
-                     pstyle->height.value = tight_height;
-                     
-                     // We might need to ensure line-height doesn't expand the box.
-                     pstyle->line_height.type = css_val_screen_px;
-                     pstyle->line_height.value = tight_height;
                 }
             }
         }
