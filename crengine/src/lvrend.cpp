@@ -10837,8 +10837,10 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 					int drop_baseline = 0;
 					LVFontRef drop_font = getFont(enode, pstyle, doc->getDocIndex());
 					if ( !drop_font.isNull() ) {
-						int drop_half_leading = (line_height_px - drop_font->getHeight()) / 2;
-						drop_baseline = drop_font->getBaseline() + drop_half_leading;
+						// The ::first-letter pseudo element itself will be laid out with its own
+						// computed line-height (usually 'normal' => font height, possibly scaled).
+						// Using the parent line-height here would over-shift and sink the drop cap.
+						drop_baseline = drop_font->getBaseline();
 						margin_top_px = target_baseline - drop_baseline;
 					}
 				}
