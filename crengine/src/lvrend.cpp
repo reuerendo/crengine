@@ -10702,148 +10702,134 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
     }
 
 	// initial-letter on ::first-letter
-    // We only support it on the actual pseudo element node (el_pseudoElem with attr_FirstLetter).
-    // Render it like a drop-cap: float:left, with auto font-size based on the parent line height,
-    // and apply sink by shifting it down via margin-top.
-    if ( nodeElementId == el_pseudoElem && enode->hasAttribute(attr_FirstLetter) ) {
-        lInt16 n = pstyle->initial_letter_size;
-        lInt16 m = pstyle->initial_letter_sink;
-        if ( n > 0 ) {
-            if ( m <= 0 )
-                m = n;
-            ldomNode * parent = enode->getUnboxedParent();
-            if ( parent && !parent->getStyle().isNull() ) {
-                LVFontRef pf = parent->getFont();
-                int base_font_size = lengthToPx(parent, parent_style->font_size, 0, 0);
-                if ( base_font_size < 1 )
-                    base_font_size = 1;
+	// We only support it on the actual pseudo element node (el_pseudoElem with attr_FirstLetter).
+	// Render it like a drop-cap: float:left, with auto font-size based on the parent line height,
+	// and apply sink by shifting it down via margin-top.
+	if ( nodeElementId == el_pseudoElem && enode->hasAttribute(attr_FirstLetter) ) {
+		lInt16 n = pstyle->initial_letter_size;
+		lInt16 m = pstyle->initial_letter_sink;
+		if ( n > 0 ) {
+			if ( m <= 0 )
+				m = n;
+			ldomNode * parent = enode->getUnboxedParent();
+			if ( parent && !parent->getStyle().isNull() ) {
+				LVFontRef pf = parent->getFont();
+				int base_font_size = lengthToPx(parent, parent_style->font_size, 0, 0);
+				if ( base_font_size < 1 )
+					base_font_size = 1;
 
-                // Use computed CSS line-height when available (often larger than font height).
-                int line_height_px = lengthToPx(parent, parent_style->line_height,
-                                                base_font_size, base_font_size, true);
-                if ( line_height_px < 1 ) {
-                    if ( !pf.isNull() )
-                        line_height_px = pf->getHeight();
-                }
-                if ( line_height_px < 1 )
-                    line_height_px = base_font_size;
+				// Use computed CSS line-height when available (often larger than font height).
+				int line_height_px = lengthToPx(parent, parent_style->line_height,
+												base_font_size, base_font_size, true);
+				if ( line_height_px < 1 ) {
+					if ( !pf.isNull() )
+						line_height_px = pf->getHeight();
+				}
+				if ( line_height_px < 1 )
+					line_height_px = base_font_size;
 
-                // --- 1. Get Base Font Metrics (Body Text) ---
-                int base_size = 0;
-                int base_baseline = 0; // Ascent (distance from box top to baseline)
-                int base_cap_height = 0;
-                int base_x_height = 0;
+				// --- Correct target height: (n-1) full lines + x-height of first line ---
+				int target_height_px = 0;
+				int base_size = 0;
+				int base_baseline = 0;
+				int base_cap_height = 0;
+				int base_x_height = 0;
 
-                if ( !pf.isNull() ) {
-                    base_size = pf->getSize();
-                    base_baseline = pf->getBaseline();
-                    LVFont::glyph_info_t gi;
+				if ( !pf.isNull() ) {
+					base_size = pf->getSize();
+					base_baseline = pf->getBaseline();
+					LVFont::glyph_info_t gi;
 
-                    // Cap-height from 'H'
-                    if ( base_size > 0 && pf->getGlyphInfo((lUInt32)(lChar32)'H', &gi) ) {
-                        base_cap_height = gi.originY; // baseline -> top of glyph bbox
-                    }
-                    if ( base_cap_height <= 0 ) {
-                        // Fallback: use baseline as an approximation.
-                        base_cap_height = base_baseline;
-                    }
+					// Cap-height from 'H'
+					if ( base_size > 0 && pf->getGlyphInfo((lUInt32)(lChar32)'H', &gi) ) {
+						base_cap_height = gi.originY; // baseline -> top of glyph bbox
+					}
+					if ( base_cap_height <= 0 ) {
+						// Fallback: use baseline as an approximation.
+						base_cap_height = base_baseline;
+					}
 
-                    // x-height from 'x'
-                    if ( base_size > 0 && pf->getGlyphInfo((lUInt32)(lChar32)'x', &gi) ) {
-                        base_x_height = gi.originY;
-                    }
-                    // Fallback: approximate x-height if missing
-                    if ( base_x_height <= 0 ) {
-                        base_x_height = base_cap_height * 2 / 3;
-                    }
-                }
+					// x-height from 'x'
+					if ( base_size > 0 && pf->getGlyphInfo((lUInt32)(lChar32)'x', &gi) ) {
+						base_x_height = gi.originY;
+					}
+					// Fallback: approximate x-height if missing
+					if ( base_x_height <= 0 ) {
+						base_x_height = base_cap_height * 2 / 3;
+					}
+				}
 
-                // --- 2. Calculate Target Cap-Height ---
-                // The visual height of the drop cap letter (from its top to its baseline)
-                // should span (n-1) full lines plus the x-height of the first line.
-                // Formula: H_cap = (n - 1) * LineHeight + x_Height
-                int target_cap_height_px = (n - 1) * line_height_px + base_x_height;
+				target_height_px =
+					(n - 1) * line_height_px
+				  + base_x_height;
 
-                if ( target_cap_height_px < 1 )
-                    target_cap_height_px = 1;
+				if ( target_height_px < 1 )
+					target_height_px = 1;
 
-                // --- 3. Calculate Target Font Size ---
-                // We need to scale the font such that its Cap-Height equals target_cap_height_px.
-                // Scale = Target_Cap_Height / Font_Cap_Height_Unscaled
-                // New_Font_Size = Scale * Base_Font_Size
-                int target_font_px = target_cap_height_px;
-                if ( base_cap_height > 0 && base_size > 0 ) {
-                    // Use long long to prevent overflow during multiplication
-                    long long calc_size = (long long)target_cap_height_px * base_size;
-                    // Rounding division
-                    target_font_px = (int)((calc_size + base_cap_height / 2) / base_cap_height);
-                }
-                if ( target_font_px < 1 )
-                    target_font_px = 1;
+				// Scale font-size so that cap-height (baseline->cap) ~= target_height_px.
+				int target_font_px = target_height_px;
+				if ( base_cap_height > 0 && base_size > 0 ) {
+					target_font_px =
+						(target_height_px * base_size + base_cap_height/2)
+						/ base_cap_height;
+				}
+				if ( target_font_px < 1 )
+					target_font_px = 1;
 
-                pstyle->float_ = css_f_left;
-                pstyle->font_size.type = css_val_screen_px;
-                pstyle->font_size.value = target_font_px;
+				pstyle->float_ = css_f_left;
+				pstyle->font_size.type = css_val_screen_px;
+				pstyle->font_size.value = target_font_px;
 
-                // --- 4. Vertical Alignment via Baseline ---
-                // The previous logic failed because it relied on the top of the box.
-                // Correct logic: Align the Drop Cap Baseline with the Baseline of the M-th line.
-                
-                int margin_top_px = 0;
-                if ( !pf.isNull() && base_size > 0 ) {
-                    // A. Calculate the position of the Target Baseline relative to the top of the paragraph.
-                    //    The first line's baseline is at 'base_baseline'.
-                    //    Each subsequent line adds 'line_height_px'.
-                    //    Target Baseline Y = base_baseline + (m - 1) * line_height_px.
-                    int target_baseline_y = base_baseline + (m - 1) * line_height_px;
+				// Avoid extra empty space below the drop cap due to font descent.
+				// Float box height will include descent, while CSS initial-letter sizing
+				// is based on baseline->cap-height. Compensate with a negative margin-bottom.
+				if ( !pf.isNull() ) {
+					int pf_height = pf->getHeight();
+					int pf_baseline = pf->getBaseline();
+					int pf_size = pf->getSize();
+					int base_descent = pf_height - pf_baseline;
+					if ( base_descent > 0 && pf_size > 0 ) {
+						int descent_px = (target_font_px * base_descent + pf_size/2) / pf_size;
+						if ( descent_px > 0 ) {
+							// margin[3] is margin-bottom (see lvstyles.h)
+							pstyle->margin[3].type = css_val_screen_px;
+							pstyle->margin[3].value = -descent_px;
+						}
+					}
+				}
 
-                    // B. Calculate the position of the Drop Cap's Baseline relative to its own box top.
-                    //    This is the scaled ascent.
-                    long long drop_baseline_calc = (long long)target_font_px * base_baseline;
-                    int drop_baseline_y = (int)((drop_baseline_calc + base_size / 2) / base_size);
-
-                    // C. Calculate margin-top.
-                    //    If the float is placed at Y=0 (top of paragraph) by default,
-                    //    we need to shift it so drop_baseline_y aligns with target_baseline_y.
-                    //    Box_Top + Drop_Baseline = Target_Baseline
-                    //    Margin_Top = Target_Baseline - Drop_Baseline
-                    //
-                    //    Example: If Target is at 50px, and Drop Baseline is at 80px (huge font),
-                    //    Margin Top = 50 - 80 = -30px (pull up). This is correct.
-                    margin_top_px = target_baseline_y - drop_baseline_y;
-
-                    // --- 5. Tight Wrapping (Border/Padding) ---
-                    // To ensure the border tightly wraps the glyph, we adjust the height.
-                    // Standard box height = Ascent + Descent.
-                    // Desired Visual Height = Cap-Height + Descent (or Bottom of Glyph).
-                    // We set the CSS height explicitly to cut off the top whitespace (Internal Leading).
-                    
-                    int base_descent = pf->getHeight() - base_baseline;
-                    long long drop_descent_calc = (long long)target_font_px * base_descent;
-                    int drop_descent = (int)((drop_descent_calc + base_size / 2) / base_size);
-                    
-                    // The desired box height is the Target Cap Height + Scaled Descent.
-                    int tight_height = target_cap_height_px + drop_descent;
-
-                    pstyle->height.type = css_val_screen_px;
-                    pstyle->height.value = tight_height;
-                    
-                    // Note: If the engine renders the glyph starting from the top of the content box
-                    // using the standard Ascent, setting a smaller height might just clip the bottom.
-                    // However, we rely on the margin-top to position the Baseline correctly.
-                    // If the border is drawn around this 'height', it will look correct at the bottom.
-                    // The top border might still be loose if the engine doesn't support 
-                    // shifting the glyph drawing origin. But positioning will be correct.
-                }
-
-                if ( margin_top_px != 0 ) {
-                    // margin[2] is margin-top (see lvstyles.h)
-                    pstyle->margin[2].type = css_val_screen_px;
-                    pstyle->margin[2].value = margin_top_px;
-                }
-            }
-        }
-    }
+				// Baseline alignment: align dropcap baseline with the baseline of line m.
+				// (m==1 => raised cap, m==n => drop cap with baseline on last line)
+				int margin_top_px = 0;
+				if ( !pf.isNull() ) {
+					if ( m < 1 )
+						m = 1;
+					else if ( m > n )
+						m = n;
+					// Baseline position inside a line box is not at its bottom edge.
+					// Match the computation used by the text formatter (lvtextfm.cpp):
+					// top_to_baseline = fontBaseline + halfLeading, where halfLeading=(lineHeight-fontHeight)/2
+					int pf_height = pf->getHeight();
+					int half_leading = (line_height_px - pf_height) / 2;
+					int top_to_baseline = pf->getBaseline() + half_leading;
+					int target_baseline = (m - 1) * line_height_px + top_to_baseline;
+					int drop_baseline = 0;
+					int pf_size = pf->getSize();
+					int pf_baseline = pf->getBaseline();
+					if ( pf_size > 0 && pf_baseline > 0 ) {
+						drop_baseline =
+							(target_font_px * pf_baseline + pf_size/2) / pf_size;
+						margin_top_px = target_baseline - drop_baseline;
+					}
+				}
+				if ( margin_top_px != 0 ) {
+					// margin[2] is margin-top (see lvstyles.h)
+					pstyle->margin[2].type = css_val_screen_px;
+					pstyle->margin[2].value = margin_top_px;
+				}
+			}
+		}
+	}
 
     #if MATHML_SUPPORT==1
         // We apply our internal MathML stylesheet *after* user-agent (including style tweaks)
