@@ -10802,7 +10802,7 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 				// (m==1 => raised cap, m==n => drop cap with baseline on last line)
 				int margin_top_px = 0;
 				if ( !pf.isNull() ) {
-					int target_baseline = m * line_height_px;
+					int target_baseline = (m - 1) * line_height_px + base_baseline;
 					int drop_baseline = 0;
 					int pf_size = pf->getSize();
 					int pf_baseline = pf->getBaseline();
