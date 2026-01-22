@@ -10867,13 +10867,10 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 						m = 1;
 					else if ( m > n )
 						m = n;
-					// Baseline position inside a line box is not at its bottom edge.
-					// Match the computation used by the text formatter (lvtextfm.cpp):
-					// top_to_baseline = fontBaseline + halfLeading, where halfLeading=(lineHeight-fontHeight)/2
-					int pf_height = pf->getHeight();
-					int half_leading = (line_height_px - pf_height) / 2;
-					int top_to_baseline = pf->getBaseline() + half_leading;
-					int target_baseline = (m - 1) * line_height_px + top_to_baseline;
+					// For floats, the positioning origin is effectively the baseline of the
+					// first line (not the line box top). So, align to the baseline of line m
+					// by applying a baseline-to-baseline offset.
+					int target_baseline = (m - 1) * line_height_px;
 					int drop_baseline = 0;
 					int pf_size = pf->getSize();
 					int pf_baseline = pf->getBaseline();
