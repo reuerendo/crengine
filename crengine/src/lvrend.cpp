@@ -10833,7 +10833,7 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 					}
 
 					// x-height from 'x'
-					if ( base_size > 0 && pf->getGlyphInfo((lUInt32)(lChar32)'H', &gi) ) {
+					if ( base_size > 0 && pf->getGlyphInfo((lUInt32)(lChar32)'ʜ', &gi) ) {
 						base_x_height = gi.originY;
 					}
 					// Fallback: approximate x-height if missing
