@@ -10750,12 +10750,11 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 				if ( line_height_px < 1 )
 					line_height_px = base_font_size;
 
-				// --- Correct target height: (n-1) full lines + x-height of first line ---
+				// --- Correct target height: (n-1) full lines + cap-height of first line ---
 				int target_height_px = 0;
 				int base_size = 0;
 				int base_baseline = 0;
 				int base_cap_height = 0;
-				int base_x_height = 0;
 
 				if ( !pf.isNull() ) {
 					base_size = pf->getSize();
@@ -10770,20 +10769,11 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 						// Fallback: use baseline as an approximation.
 						base_cap_height = base_baseline;
 					}
-
-					// x-height from 'x'
-					if ( base_size > 0 && pf->getGlyphInfo((lUInt32)(lChar32)'ʜ', &gi) ) {
-						base_x_height = gi.originY;
-					}
-					// Fallback: approximate x-height if missing
-					if ( base_x_height <= 0 ) {
-						base_x_height = base_cap_height * 2 / 3;
-					}
 				}
 
 				target_height_px =
 					(n - 1) * line_height_px
-				  + base_x_height;
+				  + base_cap_height;
 
 				if ( target_height_px < 1 )
 					target_height_px = 1;
