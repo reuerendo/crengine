@@ -10801,6 +10801,12 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 				pstyle->float_ = css_f_left;
 				pstyle->font_size.type = css_val_screen_px;
 				pstyle->font_size.value = target_font_px;
+				// Match Gecko: the first-letter participates in line layout and its box is
+				// vertically aligned within the computed line-height. Ensure the pseudo
+				// element uses the same computed line-height as its parent, so baseline
+				// alignment does not drift when KOReader interline spacing changes.
+				pstyle->line_height.type = css_val_screen_px;
+				pstyle->line_height.value = line_height_px;
 
 				// Avoid extra empty space below the drop cap due to font descent.
 				// Float box height will include descent, while CSS initial-letter sizing
@@ -10831,14 +10837,13 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
 					// Floats are positioned by the formatter with a Y origin that behaves like
 					// the baseline of the first line. Align to the baseline of line m via a
 					// baseline-to-baseline offset.
+					// Baseline-in-line-box model (same as lvtextfm.cpp strut baseline):
+					// baseline = fontBaseline + (lineHeight - fontHeight)/2
 					int parent_half_leading = (line_height_px - pf->getHeight()) / 2;
 					int target_baseline = (m - 1) * line_height_px + pf->getBaseline() + parent_half_leading;
 					int drop_baseline = 0;
 					LVFontRef drop_font = getFont(enode, pstyle, doc->getDocIndex());
 					if ( !drop_font.isNull() ) {
-						// The ::first-letter pseudo element itself will be laid out with its own
-						// computed line-height (usually 'normal' => font height, possibly scaled).
-						// Using the parent line-height here would over-shift and sink the drop cap.
 						int drop_half_leading = (line_height_px - drop_font->getHeight()) / 2;
 						drop_baseline = drop_font->getBaseline() + drop_half_leading;
 						margin_top_px = target_baseline - drop_baseline;
