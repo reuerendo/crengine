@@ -11,44 +11,27 @@ concurrency:
 
 jobs:
   build-libkoreader-cre:
-    # Use a modern host runner to ensure the job starts immediately (no queuing issues)
-    runs-on: ubuntu-latest
-    
-    # Run all steps inside an Ubuntu 20.04 container.
-    # This solves two problems:
-    # 1. Allows installing conflicting packages (gcc-multilib + gcc-arm-linux-gnueabi) needed for LuaJIT.
-    # 2. Ensures old glibc compatibility for PocketBook devices.
-    container:
-      image: ubuntu:20.04
+    # Use Ubuntu 22.04 to avoid dependency conflicts with arm-linux-gnueabi on 24.04
+    runs-on: ubuntu-22.04
 
     steps:
-      - name: Install basic tools (git, curl)
-        # We need git for the checkout action to work efficiently.
-        # DEBIAN_FRONTEND=noninteractive prevents timezone prompts blocking the build.
-        run: |
-          set -eux
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get install -y --no-install-recommends git curl ca-certificates
-
       - name: Checkout crengine
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
       - name: Install build dependencies
-        # Removed 'sudo' as we are root in the container.
-        # Installing both multilib (for LuaJIT host build) and arm cross-compiler.
         run: |
           set -eux
-          export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          apt-get install -y --no-install-recommends \
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
             build-essential \
             cmake \
             meson \
             ninja-build \
             pkg-config \
+            git \
+            ca-certificates \
             python3 \
             gcc-multilib \
             g++-multilib \
@@ -63,23 +46,31 @@ jobs:
             libtool \
             gettext \
             bison \
-            flex
+            flex \
+            patch \
+            unzip \
+            wget \
+            xz-utils
 
       - name: Checkout koreader-base
         run: |
           set -eux
           git clone --depth 1 https://github.com/koreader/koreader-base.git koreader-base
+          # Initialize submodules needed for the build (especially kpvcrlib and its deps)
           git -C koreader-base submodule update --init --recursive --depth 1
 
       - name: Use current crengine sources in kpvcrlib
         run: |
           set -eux
+          # Remove the existing crengine submodule directory and link our current workspace
           rm -rf koreader-base/thirdparty/kpvcrlib/crengine
           ln -s "$GITHUB_WORKSPACE" koreader-base/thirdparty/kpvcrlib/crengine
 
       - name: Build (koreader-cre target only)
         run: |
           set -eux
+          # We define CHOST to use the system-installed cross-compiler
+          # Pocketbook target in KOReader is usually arm-linux-gnueabi
           make -C koreader-base \
             TARGET=pocketbook \
             CHOST=arm-linux-gnueabi \
@@ -90,17 +81,14 @@ jobs:
         run: |
           set -eux
           mkdir -p artifacts
+          # Find the compiled shared object and prepare it for upload
           find koreader-base -type f -name 'libkoreader-cre.so' -print
           find koreader-base -type f -name 'libkoreader-cre.so' -exec cp -v '{}' artifacts/ \;
           for so in artifacts/libkoreader-cre.so; do
             test -f "$so"
             file "$so"
-            # Check if cross-readelf exists, otherwise fallback to system readelf
-            if command -v arm-linux-gnueabi-readelf >/dev/null 2>&1; then
-                arm-linux-gnueabi-readelf -h "$so" | sed -n '1,25p'
-            else
-                readelf -h "$so" | sed -n '1,25p'
-            fi
+            arm-linux-gnueabi-readelf -h "$so" | sed -n '1,25p'
+            # Strip debug symbols to reduce file size
             arm-linux-gnueabi-strip --strip-unneeded "$so" || true
             file "$so"
           done
