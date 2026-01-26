@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   build-libkoreader-cre:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout crengine
@@ -25,37 +25,61 @@ jobs:
           sudo dpkg --add-architecture i386
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            cmake \
-            meson \
-            ninja-build \
-            pkg-config \
-            git \
-            ca-certificates \
-            python3 \
             autoconf \
             automake \
-            libtool \
-            gettext \
             bison \
+            build-essential \
+            ca-certificates \
+            cmake \
+            curl \
+            file \
             flex \
             gawk \
-            wget \
-            file \
             gcc-multilib \
             g++-multilib \
+            gettext \
+            git \
+            gperf \
+            help2man \
             libc6-dev-i386 \
             libc6:i386 \
-            libstdc++6:i386
+            libffi-dev \
+            libncurses-dev \
+            libpcre2-dev \
+            libsdl2-2.0-0 \
+            libsdl2-dev \
+            libstdc++6:i386 \
+            libtool \
+            libtool-bin \
+            luarocks \
+            meson \
+            nasm \
+            ninja-build \
+            patch \
+            perl \
+            pkg-config \
+            python3 \
+            python3-pip \
+            texinfo \
+            unzip \
+            wget \
+            zlib1g:i386
+
+      - name: Upgrade meson to latest version
+        run: |
+          python3 -m pip install --upgrade meson
 
       - name: Download and setup PocketBook toolchain
         run: |
           set -eux
-          wget -O pocketbook-toolchain.tar.gz \
-            https://github.com/koreader/koxtoolchain/releases/download/2025.05/pocketbook.tar.gz
-          sudo mkdir -p /opt/x-tools
-          sudo tar -xzf pocketbook-toolchain.tar.gz -C /opt
-          rm pocketbook-toolchain.tar.gz
+          cd $HOME
+          wget https://github.com/koreader/koxtoolchain/releases/download/2025.05/pocketbook.tar.gz
+          tar -xzf pocketbook.tar.gz
+          rm pocketbook.tar.gz
+
+      - name: Setup toolchain environment
+        run: |
+          echo "$HOME/x-tools/arm-pocketbook-linux-gnueabi/bin" >> $GITHUB_PATH
 
       - name: Checkout koreader-base
         run: |
@@ -72,7 +96,6 @@ jobs:
       - name: Build (koreader-cre target only)
         run: |
           set -eux
-          export PATH="/opt/x-tools/arm-pocketbook-linux-gnueabi/bin:${PATH}"
           make -C koreader-base \
             TARGET=pocketbook \
             KODEBUG=0 \
@@ -81,7 +104,6 @@ jobs:
       - name: Collect artifacts
         run: |
           set -eux
-          export PATH="/opt/x-tools/arm-pocketbook-linux-gnueabi/bin:${PATH}"
           mkdir -p artifacts
           find koreader-base -type f -name 'libkoreader-cre.so' -print
           find koreader-base -type f -name 'libkoreader-cre.so' -exec cp -v '{}' artifacts/ \;
