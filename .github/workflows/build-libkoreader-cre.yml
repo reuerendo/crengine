@@ -11,9 +11,11 @@ concurrency:
 
 jobs:
   build-libkoreader-cre:
-    # Using ubuntu-22.04 to ensure better glibc compatibility with older PocketBook devices.
-    # ubuntu-24.04 has a very new glibc, which might cause "version not found" errors on the device.
-    runs-on: ubuntu-22.04
+    # ИСПОЛЬЗУЕМ UBUNTU 20.04
+    # Это решает две проблемы:
+    # 1. Позволяет установить gcc-multilib И gcc-arm-linux-gnueabi одновременно (на 22.04/24.04 они конфликтуют).
+    # 2. Обеспечивает старую версию glibc, совместимую с большинством устройств PocketBook.
+    runs-on: ubuntu-20.04
 
     steps:
       - name: Checkout crengine
@@ -22,8 +24,8 @@ jobs:
           fetch-depth: 1
 
       - name: Install build dependencies
-        # Removed gcc-multilib, g++-multilib, and libc6-dev-i386 to fix package conflicts
-        # with the ARM cross-compiler.
+        # Возвращаем gcc-multilib и g++-multilib, так как LuaJIT требует '-m32' для сборки.
+        # На ubuntu-20.04 это не вызовет конфликта с arm-linux-gnueabi.
         run: |
           set -eux
           sudo apt-get update
@@ -36,6 +38,9 @@ jobs:
             git \
             ca-certificates \
             python3 \
+            gcc-multilib \
+            g++-multilib \
+            libc6-dev-i386 \
             nasm \
             yasm \
             gcc-arm-linux-gnueabi \
@@ -78,7 +83,7 @@ jobs:
           for so in artifacts/libkoreader-cre.so; do
             test -f "$so"
             file "$so"
-            # Ensure we use the cross-readelf, not the host one, if available, or fallback to host
+            # Проверяем наличие кросс-readelf, иначе используем системный
             if command -v arm-linux-gnueabi-readelf >/dev/null 2>&1; then
                 arm-linux-gnueabi-readelf -h "$so" | sed -n '1,25p'
             else
