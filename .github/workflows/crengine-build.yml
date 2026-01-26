@@ -1,0 +1,333 @@
+# CRENGINE BUILD CONFIGURATION FOR KOReader
+# This YAML file defines the build process for the crengine library used by KOReader
+
+name: Crengine Build for KOReader
+
+# Build metadata
+version: "1.0"
+description: "Build configuration for crengine library - the core rendering engine for KOReader"
+
+# Build environment
+build:
+  # Base directory (relative to this file)
+  base_dir: "./crengine"
+  
+  # Build directory
+  build_dir: "./build"
+  
+  # Installation directory
+  install_dir: "./install"
+  
+  # Build type
+  build_type: "Release"
+  
+  # Number of parallel jobs
+  parallel_jobs: 4
+
+# CMake configuration
+cmake:
+  # Minimum CMake version required
+  min_version: "3.17.5"
+  
+  # Generator
+  generator: "Ninja"
+  
+  # Build configuration options
+  options:
+    # GUI type - FB2PROPS is used for KOReader (library-only build)
+    GUI: "FB2PROPS"
+    
+    # Build type
+    CMAKE_BUILD_TYPE: "Release"
+    
+    # Enable static library building
+    BUILD_SHARED_LIBS: "OFF"
+    
+    # Position Independent Code for static library
+    CMAKE_POSITION_INDEPENDENT_CODE: "ON"
+    
+    # Document buffer compression level (0-5)
+    DOC_DATA_COMPRESSION_LEVEL: "1"
+    
+    # Document buffer size
+    DOC_BUFFER_SIZE: "0x400000"
+    
+    # Enable UNRAR support
+    USE_UNRAR: "ON"
+    
+    # Large file support
+    CMAKE_CXX_STANDARD: "11"
+    CMAKE_CXX_STANDARD_REQUIRED: "ON"
+    
+    # Compiler flags for optimization
+    CMAKE_CXX_FLAGS_RELEASE: "-O3 -DNDEBUG -fPIC"
+    CMAKE_C_FLAGS_RELEASE: "-O3 -DNDEBUG -fPIC"
+
+# Dependencies configuration
+dependencies:
+  # System dependencies (Ubuntu/Debian packages)
+  system_packages:
+    - "cmake"
+    - "ninja-build"
+    - "g++"
+    - "make"
+    - "pkg-config"
+    - "libfreetype6-dev"
+    - "libfribidi-dev"
+    - "libharfbuzz-dev"
+    - "libjpeg-turbo8-dev"
+    - "libpng-dev"
+    - "libunibreak-dev"
+    - "libutf8proc-dev"
+    - "libwebp-dev"
+    - "libxxhash-dev"
+    - "libzstd-dev"
+    - "libxml2-utils"
+    - "zlib1g-dev"
+
+  # Third-party libraries to build with crengine
+  third_party:
+    # Core dependencies
+    - name: "zlib"
+      enabled: true
+      build_internal: true
+      source_dir: "thirdparty/zlib"
+    
+    - name: "libpng"
+      enabled: true
+      build_internal: true
+      source_dir: "thirdparty/libpng"
+      depends_on: ["zlib"]
+    
+    - name: "libjpeg"
+      enabled: true
+      build_internal: true
+      source_dir: "thirdparty/libjpeg"
+    
+    - name: "freetype"
+      enabled: true
+      build_internal: true
+      source_dir: "thirdparty/freetype"
+      depends_on: ["zlib", "libpng"]
+    
+    - name: "chmlib"
+      enabled: true
+      build_internal: true
+      source_dir: "thirdparty/chmlib"
+    
+    - name: "antiword"
+      enabled: true
+      build_internal: true
+      source_dir: "thirdparty/antiword"
+    
+    - name: "unrar"
+      enabled: true
+      build_internal: true
+      source_dir: "thirdparty/unrar"
+    
+    - name: "tinydict"
+      enabled: true
+      build_internal: true
+      source_dir: "tinydict"
+
+# Target configuration
+targets:
+  # Main crengine library
+  - name: "crengine"
+    type: "static_library"
+    output_name: "libcrengine.a"
+    sources:
+      - "crengine/src/cp_stats.cpp"
+      - "crengine/src/lvstring.cpp"
+      - "crengine/src/props.cpp"
+      - "crengine/src/lstridmap.cpp"
+      - "crengine/src/rtfimp.cpp"
+      - "crengine/src/cri18n.cpp"
+      - "crengine/src/lvmemman.cpp"
+      - "crengine/src/lvstyles.cpp"
+      - "crengine/src/crtxtenc.cpp"
+      - "crengine/src/lvtinydom.cpp"
+      - "crengine/src/lvstream.cpp"
+      - "crengine/src/lvxml.cpp"
+      - "crengine/src/lvstsheet.cpp"
+      - "crengine/src/txtselector.cpp"
+      - "crengine/src/crtest.cpp"
+      - "crengine/src/lvbmpbuf.cpp"
+      - "crengine/src/lvfnt.cpp"
+      - "crengine/src/hyphman.cpp"
+      - "crengine/src/lvfntman.cpp"
+      - "crengine/src/crgui.cpp"
+      - "crengine/src/lvimg.cpp"
+      - "crengine/src/crskin.cpp"
+      - "crengine/src/lvdrawbuf.cpp"
+      - "crengine/src/lvdocview.cpp"
+      - "crengine/src/lvpagesplitter.cpp"
+      - "crengine/src/lvtextfm.cpp"
+      - "crengine/src/lvrend.cpp"
+      - "crengine/src/wolutil.cpp"
+      - "crengine/src/hist.cpp"
+      - "crengine/src/chmfmt.cpp"
+      - "crengine/src/epubfmt.cpp"
+      - "crengine/src/pdbfmt.cpp"
+      - "crengine/src/wordfmt.cpp"
+      - "crengine/src/crconcurrent.cpp"
+    
+    include_directories:
+      - "crengine/include"
+      - "thirdparty/zlib"
+      - "thirdparty/libpng"
+      - "thirdparty/libjpeg"
+      - "thirdparty/freetype/include"
+      - "thirdparty/chmlib/src"
+      - "thirdparty/antiword"
+      - "thirdparty/unrar"
+      - "tinydict"
+    
+    compiler_definitions:
+      - "USE_EXTERNAL_EDICT_DICTIONARY=0"
+      - "DOC_DATA_COMPRESSION_LEVEL=1"
+      - "DOC_BUFFER_SIZE=0x400000"
+      - "BIG_PAGE_MARGINS=0"
+      - "MAX_IMAGE_SCALE_MUL=0"
+      - "LINUX=1"
+      - "_LINUX=1"
+      - "_LARGEFILE64_SOURCE=1"
+      - "_FILE_OFFSET_BITS=64"
+      - "LVLONG_FILE_SUPPORT=1"
+      - "COLOR_BACKBUFFER=1"
+      - "LDOM_USE_OWN_MEM_MAN=1"
+      - "USE_FREETYPE=1"
+      - "USE_UNRAR=1"
+      - "CHM_SUPPORT_ENABLED=1"
+      - "CR3_ANTIWORD_PATCH=1"
+      - "ENABLE_ANTIWORD=1"
+      - "CR3_PATCH=1"
+      - "NDEBUG=1"
+    
+    link_libraries:
+      - "z"
+      - "png"
+      - "jpeg"
+      - "freetype"
+      - "chmlib"
+      - "antiword"
+      - "unrar"
+      - "tinydict"
+
+# Build steps
+build_steps:
+  # Step 1: Install system dependencies
+  - name: "install_dependencies"
+    type: "system_command"
+    command: "sudo apt-get update && sudo apt-get install -y --no-install-recommends ${system_packages}"
+  
+  # Step 2: Create build directory
+  - name: "create_build_dir"
+    type: "system_command"
+    command: "mkdir -p ${build_dir}"
+  
+  # Step 3: Configure with CMake
+  - name: "configure_cmake"
+    type: "cmake_configure"
+    source_dir: "${base_dir}"
+    build_dir: "${build_dir}"
+    generator: "${cmake.generator}"
+    options: "${cmake.options}"
+  
+  # Step 4: Build crengine target
+  - name: "build_crengine"
+    type: "cmake_build"
+    build_dir: "${build_dir}"
+    target: "crengine"
+    parallel: "${parallel_jobs}"
+  
+  # Step 5: Install artifacts
+  - name: "install_artifacts"
+    type: "system_command"
+    command: |
+      mkdir -p ${install_dir}/lib
+      mkdir -p ${install_dir}/include
+      find ${build_dir} -name "libcrengine.a" -exec cp {} ${install_dir}/lib/ \;
+      cp -r ${base_dir}/crengine/include/* ${install_dir}/include/
+
+# Testing configuration
+testing:
+  enabled: false
+  # If enabled, would include unit tests for crengine components
+
+# Packaging configuration
+packaging:
+  # Create archive with built library and headers
+  enabled: true
+  format: "tar.gz"
+  output_name: "crengine-${version}-${build_type}.tar.gz"
+  include_files:
+    - "${install_dir}/lib/libcrengine.a"
+    - "${install_dir}/include/"
+
+# Platform-specific configurations
+platforms:
+  linux:
+    compiler: "g++"
+    cmake_options:
+      CMAKE_CXX_COMPILER: "g++"
+      CMAKE_C_COMPILER: "gcc"
+  
+  macos:
+    compiler: "clang++"
+    cmake_options:
+      CMAKE_CXX_COMPILER: "clang++"
+      CMAKE_C_COMPILER: "clang"
+      MAC: "1"
+      LINUX: "1"
+      CR_EMULATE_GETTEXT: "1"
+    system_packages:
+      - "cmake"
+      - "ninja"
+      - "pkg-config"
+  
+  windows:
+    compiler: "msvc"
+    cmake_options:
+      CMAKE_CXX_COMPILER: "cl"
+      CMAKE_C_COMPILER: "cl"
+      WIN32: "1"
+      _WIN32: "1"
+      CR_EMULATE_GETTEXT: "1"
+    system_packages:
+      - "cmake"
+      - "ninja"
+
+# Integration with KOReader
+koreader_integration:
+  # Path where koreader expects the crengine library
+  library_path: "koreader-base/thirdparty/crengine"
+  
+  # Headers location for koreader
+  headers_path: "koreader-base/thirdparty/crengine/include"
+  
+  # Link flags for koreader
+  link_flags: "-L${install_dir}/lib -lcrengine"
+  
+  # Include flags for koreader
+  include_flags: "-I${install_dir}/include"
+
+# Development utilities
+development:
+  # Clean build command
+  clean_command: "rm -rf ${build_dir} ${install_dir}"
+  
+  # Rebuild command
+  rebuild_command: |
+    ${development.clean_command}
+    ${build_steps[2].command}
+    ${build_steps[3].command}
+    ${build_steps[4].command}
+  
+  # Debug build configuration
+  debug_config:
+    build_type: "Debug"
+    cmake_options:
+      CMAKE_BUILD_TYPE: "Debug"
+      CMAKE_CXX_FLAGS_DEBUG: "-g -O0 -D_DEBUG=1 -DDEBUG=1"
+      CMAKE_C_FLAGS_DEBUG: "-g -O0 -D_DEBUG=1 -DDEBUG=1"
