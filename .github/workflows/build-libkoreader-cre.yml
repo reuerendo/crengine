@@ -1,0 +1,69 @@
+name: Build libkoreader-cre.so
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-libkoreader-cre:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout crengine
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          set -eux
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            ninja-build \
+            pkg-config \
+            git \
+            ca-certificates \
+            python3 \
+            autoconf \
+            automake \
+            libtool \
+            gettext \
+            bison \
+            flex
+
+      - name: Checkout koreader-base
+        run: |
+          set -eux
+          git clone --depth 1 https://github.com/koreader/koreader-base.git koreader-base
+          git -C koreader-base submodule update --init --recursive --depth 1
+
+      - name: Use current crengine sources in kpvcrlib
+        run: |
+          set -eux
+          rm -rf koreader-base/thirdparty/kpvcrlib/crengine
+          ln -s "$GITHUB_WORKSPACE" koreader-base/thirdparty/kpvcrlib/crengine
+
+      - name: Build (koreader-cre target only)
+        run: |
+          set -eux
+          make -C koreader-base koreader-cre
+
+      - name: Collect artifacts
+        run: |
+          set -eux
+          mkdir -p artifacts
+          find koreader-base/build -type f -name 'libkoreader-cre.so' -print -exec cp -v '{}' artifacts/ \;
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: libkoreader-cre
+          path: artifacts/
+          if-no-files-found: error
