@@ -34,6 +34,9 @@ jobs:
             python3 \
             nasm \
             yasm \
+            gcc-arm-linux-gnueabi \
+            g++-arm-linux-gnueabi \
+            binutils-arm-linux-gnueabi \
             autoconf \
             automake \
             libtool \
@@ -56,7 +59,10 @@ jobs:
       - name: Build (koreader-cre target only)
         run: |
           set -eux
-          make -C koreader-base koreader-cre
+          make -C koreader-base \
+            TARGET=pocketbook \
+            KODEBUG=0 \
+            koreader-cre
 
       - name: Collect artifacts
         run: |
@@ -64,10 +70,17 @@ jobs:
           mkdir -p artifacts
           find koreader-base -type f -name 'libkoreader-cre.so' -print
           find koreader-base -type f -name 'libkoreader-cre.so' -exec cp -v '{}' artifacts/ \;
+          for so in artifacts/libkoreader-cre.so; do
+            test -f "$so"
+            file "$so"
+            arm-linux-gnueabi-readelf -h "$so" | sed -n '1,25p'
+            arm-linux-gnueabi-strip --strip-unneeded "$so" || true
+            file "$so"
+          done
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: libkoreader-cre
+          name: libkoreader-cre-pocketbook
           path: artifacts/
           if-no-files-found: error
