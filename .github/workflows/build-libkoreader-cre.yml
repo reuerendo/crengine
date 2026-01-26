@@ -32,6 +32,9 @@ jobs:
             git \
             ca-certificates \
             python3 \
+            gcc-multilib \
+            g++-multilib \
+            libc6-dev-i386 \
             nasm \
             yasm \
             gcc-arm-linux-gnueabi \
