@@ -11,32 +11,44 @@ concurrency:
 
 jobs:
   build-libkoreader-cre:
-    # ИСПОЛЬЗУЕМ UBUNTU 20.04
-    # Это решает две проблемы:
-    # 1. Позволяет установить gcc-multilib И gcc-arm-linux-gnueabi одновременно (на 22.04/24.04 они конфликтуют).
-    # 2. Обеспечивает старую версию glibc, совместимую с большинством устройств PocketBook.
-    runs-on: ubuntu-20.04
+    # Use a modern host runner to ensure the job starts immediately (no queuing issues)
+    runs-on: ubuntu-latest
+    
+    # Run all steps inside an Ubuntu 20.04 container.
+    # This solves two problems:
+    # 1. Allows installing conflicting packages (gcc-multilib + gcc-arm-linux-gnueabi) needed for LuaJIT.
+    # 2. Ensures old glibc compatibility for PocketBook devices.
+    container:
+      image: ubuntu:20.04
 
     steps:
+      - name: Install basic tools (git, curl)
+        # We need git for the checkout action to work efficiently.
+        # DEBIAN_FRONTEND=noninteractive prevents timezone prompts blocking the build.
+        run: |
+          set -eux
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends git curl ca-certificates
+
       - name: Checkout crengine
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
       - name: Install build dependencies
-        # Возвращаем gcc-multilib и g++-multilib, так как LuaJIT требует '-m32' для сборки.
-        # На ubuntu-20.04 это не вызовет конфликта с arm-linux-gnueabi.
+        # Removed 'sudo' as we are root in the container.
+        # Installing both multilib (for LuaJIT host build) and arm cross-compiler.
         run: |
           set -eux
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update
+          apt-get install -y --no-install-recommends \
             build-essential \
             cmake \
             meson \
             ninja-build \
             pkg-config \
-            git \
-            ca-certificates \
             python3 \
             gcc-multilib \
             g++-multilib \
@@ -83,7 +95,7 @@ jobs:
           for so in artifacts/libkoreader-cre.so; do
             test -f "$so"
             file "$so"
-            # Проверяем наличие кросс-readelf, иначе используем системный
+            # Check if cross-readelf exists, otherwise fallback to system readelf
             if command -v arm-linux-gnueabi-readelf >/dev/null 2>&1; then
                 arm-linux-gnueabi-readelf -h "$so" | sed -n '1,25p'
             else
