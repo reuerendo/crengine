@@ -32,6 +32,8 @@ jobs:
             git \
             ca-certificates \
             python3 \
+            nasm \
+            yasm \
             autoconf \
             automake \
             libtool \
@@ -60,7 +62,8 @@ jobs:
         run: |
           set -eux
           mkdir -p artifacts
-          find koreader-base/build -type f -name 'libkoreader-cre.so' -print -exec cp -v '{}' artifacts/ \;
+          find koreader-base -type f -name 'libkoreader-cre.so' -print
+          find koreader-base -type f -name 'libkoreader-cre.so' -exec cp -v '{}' artifacts/ \;
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
