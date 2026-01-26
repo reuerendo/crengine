@@ -11,8 +11,7 @@ concurrency:
 
 jobs:
   build-libkoreader-cre:
-    # Use Ubuntu 22.04 to avoid dependency conflicts with arm-linux-gnueabi on 24.04
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout crengine
@@ -33,63 +32,58 @@ jobs:
             git \
             ca-certificates \
             python3 \
-            gcc-multilib \
-            g++-multilib \
-            libc6-dev-i386 \
-            nasm \
-            yasm \
-            gcc-arm-linux-gnueabi \
-            g++-arm-linux-gnueabi \
-            binutils-arm-linux-gnueabi \
             autoconf \
             automake \
             libtool \
             gettext \
             bison \
             flex \
-            patch \
-            unzip \
+            gawk \
             wget \
-            xz-utils
+            file
+
+      - name: Download and setup PocketBook toolchain
+        run: |
+          set -eux
+          wget -O pocketbook-toolchain.tar.gz \
+            https://github.com/koreader/koxtoolchain/releases/download/2025.05/pocketbook.tar.gz
+          sudo mkdir -p /opt/x-tools
+          sudo tar -xzf pocketbook-toolchain.tar.gz -C /opt
+          rm pocketbook-toolchain.tar.gz
 
       - name: Checkout koreader-base
         run: |
           set -eux
           git clone --depth 1 https://github.com/koreader/koreader-base.git koreader-base
-          # Initialize submodules needed for the build (especially kpvcrlib and its deps)
           git -C koreader-base submodule update --init --recursive --depth 1
 
       - name: Use current crengine sources in kpvcrlib
         run: |
           set -eux
-          # Remove the existing crengine submodule directory and link our current workspace
           rm -rf koreader-base/thirdparty/kpvcrlib/crengine
           ln -s "$GITHUB_WORKSPACE" koreader-base/thirdparty/kpvcrlib/crengine
 
       - name: Build (koreader-cre target only)
         run: |
           set -eux
-          # We define CHOST to use the system-installed cross-compiler
-          # Pocketbook target in KOReader is usually arm-linux-gnueabi
+          export PATH="/opt/x-tools/arm-pocketbook-linux-gnueabi/bin:${PATH}"
           make -C koreader-base \
             TARGET=pocketbook \
-            CHOST=arm-linux-gnueabi \
             KODEBUG=0 \
             koreader-cre
 
       - name: Collect artifacts
         run: |
           set -eux
+          export PATH="/opt/x-tools/arm-pocketbook-linux-gnueabi/bin:${PATH}"
           mkdir -p artifacts
-          # Find the compiled shared object and prepare it for upload
           find koreader-base -type f -name 'libkoreader-cre.so' -print
           find koreader-base -type f -name 'libkoreader-cre.so' -exec cp -v '{}' artifacts/ \;
           for so in artifacts/libkoreader-cre.so; do
             test -f "$so"
             file "$so"
-            arm-linux-gnueabi-readelf -h "$so" | sed -n '1,25p'
-            # Strip debug symbols to reduce file size
-            arm-linux-gnueabi-strip --strip-unneeded "$so" || true
+            arm-pocketbook-linux-gnueabi-readelf -h "$so" | sed -n '1,25p'
+            arm-pocketbook-linux-gnueabi-strip --strip-unneeded "$so"
             file "$so"
           done
 
