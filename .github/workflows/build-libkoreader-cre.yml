@@ -61,6 +61,7 @@ jobs:
           set -eux
           make -C koreader-base \
             TARGET=pocketbook \
+            CHOST=arm-linux-gnueabi \
             KODEBUG=0 \
             koreader-cre
 
