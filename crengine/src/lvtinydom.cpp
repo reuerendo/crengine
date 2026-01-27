@@ -6471,29 +6471,6 @@ void ldomNode::ensureFirstLetterPseudoElement() {
 #endif
 }
 
-// void ldomNode::removeFirstLetterPseudoElement() {
-// #if BUILD_LITE!=1
-    // int nb_children = getChildCount();
-    // for ( int i=0; i<nb_children; i++ ) {
-        // ldomNode * child = getChildNode(i);
-        // if ( child && child->getNodeId() == el_pseudoElem && child->hasAttribute(attr_FirstLetter) ) {
-            // lString32 original = child->getAttributeValue(attr_InnerText);
-            // if ( !original.empty() ) {
-                // for ( int j=i+1; j<nb_children; j++ ) {
-                    // ldomNode * next = getChildNode(j);
-                    // if ( next && next->isText() ) {
-                        // next->setText( original );
-                        // break;
-                    // }
-                // }
-            // }
-            // removeChildren(i, i);
-            // break;
-        // }
-    // }
-// #endif
-// }
-
 #if BUILD_LITE!=1
 static void resetRendMethodToInline( ldomNode * node )
 {

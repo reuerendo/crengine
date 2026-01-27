@@ -4422,71 +4422,69 @@ void renderFinalBlock( ldomNode * enode, LFormattedText * txform, RenderRectAcce
             // be drawn over each word by the LFormattedText txform
             lUInt32 bgcl = parent->getRendMethod() == erm_final ? LTEXT_COLOR_CURRENT : getBackgroundColor(style);
 
-            // When ::first-letter is implemented via an embedded float (initial-letter dropcap),
-            // the pseudo element might be inside a floatBox sibling and rendered later as a float
-            // object (and so not visited in this renderFinalBlock() walk). In that case, we still
-            // need to skip the first letter from this text node.
-            if ( pending_first_letter && pending_first_letter_active && !*pending_first_letter_active ) {
-                if ( parent && !parent->isNull() ) {
-                    int idx = enode->getNodeIndex();
-                    if ( idx > 0 ) {
-                        ldomNode * prev = parent->getChildNode( idx - 1 );
-                        if ( prev && !prev->isNull() && prev->isElement() && prev->getNodeId() == el_floatBox ) {
-                            ldomNode * n = prev;
-                            // floatBox usually has a single child, but keep walking down the first child
-                            // to reach the embedded pseudo element.
-                            while ( n && !n->isNull() && n->isElement() && n->getChildCount() > 0 ) {
-                                ldomNode * c0 = n->getChildNode(0);
-                                if ( !c0 || c0->isNull() )
-                                    break;
-                                n = c0;
-                                if ( n->isElement() && n->getNodeId() == el_pseudoElem && n->hasAttribute(attr_FirstLetter) ) {
-                                    *pending_first_letter = n->getAttributeValue(attr_FirstLetter);
-                                    *pending_first_letter_active = true;
-                                    break;
+            if ( pending_first_letter && pending_first_letter_active ) {
+                if ( !*pending_first_letter_active ) {
+                    if ( parent && !parent->isNull() ) {
+                        int idx = enode->getNodeIndex();
+                        if ( idx > 0 ) {
+                            ldomNode * prev = parent->getChildNode( idx - 1 );
+                            if ( prev && !prev->isNull() && prev->isElement() && prev->getNodeId() == el_floatBox ) {
+                                ldomNode * n = prev;
+                                while ( n && !n->isNull() && n->isElement() && n->getChildCount() > 0 ) {
+                                    ldomNode * c0 = n->getChildNode(0);
+                                    if ( !c0 || c0->isNull() )
+                                        break;
+                                    n = c0;
+                                    if ( n->isElement() && n->getNodeId() == el_pseudoElem && n->hasAttribute(attr_FirstLetter) ) {
+                                        *pending_first_letter = n->getAttributeValue(attr_FirstLetter);
+                                        *pending_first_letter_active = true;
+                                        break;
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            if ( pending_first_letter && pending_first_letter_active && *pending_first_letter_active
-                    && !pending_first_letter->empty() && style->white_space!=css_ws_pre ) {
-                int start = 0;
-                // Skip leading whitespace and some bidi control chars that might have been injected
-                // (so we can still match the first-letter string against the actual content).
-                while ( start < txt.length() ) {
-                    lChar32 ch = txt[start];
-                    if ( (lGetCharProps(ch) & CH_PROP_SPACE) ) {
-                        start++;
-                        continue;
-                    }
-                    if ( ch == 0x202A || ch == 0x202B || ch == 0x202D || ch == 0x202E || ch == 0x202C ||
-                         ch == 0x2066 || ch == 0x2067 || ch == 0x2068 || ch == 0x2069 ||
-                         ch == 0x200E || ch == 0x200F ) {
-                        start++;
-                        continue;
-                    }
-                    break;
-                }
+                if ( *pending_first_letter_active && !pending_first_letter->empty() && style->white_space!=css_ws_pre ) {
+                    auto skip_prefix = [&txt]() {
+                        int start = 0;
+                        while ( start < txt.length() ) {
+                            lChar32 ch = txt[start];
+                            if ( (lGetCharProps(ch) & CH_PROP_SPACE) ) {
+                                start++;
+                                continue;
+                            }
+                            if ( ch == 0x202A || ch == 0x202B || ch == 0x202D || ch == 0x202E || ch == 0x202C ||
+                                 ch == 0x2066 || ch == 0x2067 || ch == 0x2068 || ch == 0x2069 ||
+                                 ch == 0x200E || ch == 0x200F ) {
+                                start++;
+                                continue;
+                            }
+                            break;
+                        }
+                        return start;
+                    };
 
-                lString32 pending = *pending_first_letter;
-                int plen = pending.length();
-                bool removed = false;
-                if ( plen > 0 ) {
-                    if ( start + plen <= txt.length() && txt.substr(start, plen) == pending ) {
-                        txt.erase(start, plen);
-                        removed = true;
-                    }
-                    else if ( plen <= txt.length() && txt.substr(0, plen) == pending ) {
-                        txt.erase(0, plen);
-                        removed = true;
-                    }
-                    else {
-                        // If text-transform is applied, the rendered text might not match the
-                        // raw stored pending_first_letter.
-                        lString32 pending_tt = pending;
+                    auto try_remove = [&txt](int start, const lString32 & s) {
+                        int plen = s.length();
+                        if ( plen <= 0 )
+                            return false;
+                        if ( start + plen <= txt.length() && txt.substr(start, plen) == s ) {
+                            txt.erase(start, plen);
+                            return true;
+                        }
+                        if ( plen <= txt.length() && txt.substr(0, plen) == s ) {
+                            txt.erase(0, plen);
+                            return true;
+                        }
+                        return false;
+                    };
+
+                    int start = skip_prefix();
+                    bool removed = try_remove(start, *pending_first_letter);
+                    if ( !removed ) {
+                        lString32 pending_tt = *pending_first_letter;
                         switch (style->text_transform) {
                         case css_tt_uppercase:
                             pending_tt.uppercase();
@@ -4503,21 +4501,10 @@ void renderFinalBlock( ldomNode * enode, LFormattedText * txform, RenderRectAcce
                         default:
                             break;
                         }
-                        int plen_tt = pending_tt.length();
-                        if ( plen_tt > 0 ) {
-                            if ( start + plen_tt <= txt.length() && txt.substr(start, plen_tt) == pending_tt ) {
-                                txt.erase(start, plen_tt);
-                                removed = true;
-                            }
-                            else if ( plen_tt <= txt.length() && txt.substr(0, plen_tt) == pending_tt ) {
-                                txt.erase(0, plen_tt);
-                                removed = true;
-                            }
-                        }
+                        removed = try_remove(start, pending_tt);
                     }
-                }
-                if ( removed ) {
-                    *pending_first_letter_active = false;
+                    if ( removed )
+                        *pending_first_letter_active = false;
                 }
             }
 
