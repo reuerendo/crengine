@@ -6440,7 +6440,13 @@ void ldomNode::ensureFirstLetterPseudoElement() {
         return;
 
     // 2. Consume the letter/digit
-    i++; 
+    i++;
+    while ( i < len ) {
+        int props = lGetCharProps(original[i]);
+        if ( !(props & CH_PROP_MODIFIER) )
+            break;
+        i++;
+    }
 
     // 3. Scan suffix punctuation (must be immediate, no spaces)
     while ( i < len ) {
