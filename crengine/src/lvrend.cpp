@@ -4422,6 +4422,35 @@ void renderFinalBlock( ldomNode * enode, LFormattedText * txform, RenderRectAcce
             // be drawn over each word by the LFormattedText txform
             lUInt32 bgcl = parent->getRendMethod() == erm_final ? LTEXT_COLOR_CURRENT : getBackgroundColor(style);
 
+            // When ::first-letter is implemented via an embedded float (initial-letter dropcap),
+            // the pseudo element might be inside a floatBox sibling and rendered later as a float
+            // object (and so not visited in this renderFinalBlock() walk). In that case, we still
+            // need to skip the first letter from this text node.
+            if ( pending_first_letter && pending_first_letter_active && !*pending_first_letter_active ) {
+                if ( parent && !parent->isNull() ) {
+                    int idx = enode->getNodeIndex();
+                    if ( idx > 0 ) {
+                        ldomNode * prev = parent->getChildNode( idx - 1 );
+                        if ( prev && !prev->isNull() && prev->isElement() && prev->getNodeId() == el_floatBox ) {
+                            ldomNode * n = prev;
+                            // floatBox usually has a single child, but keep walking down the first child
+                            // to reach the embedded pseudo element.
+                            while ( n && !n->isNull() && n->isElement() && n->getChildCount() > 0 ) {
+                                ldomNode * c0 = n->getChildNode(0);
+                                if ( !c0 || c0->isNull() )
+                                    break;
+                                n = c0;
+                                if ( n->isElement() && n->getNodeId() == el_pseudoElem && n->hasAttribute(attr_FirstLetter) ) {
+                                    *pending_first_letter = n->getAttributeValue(attr_FirstLetter);
+                                    *pending_first_letter_active = true;
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if ( pending_first_letter && pending_first_letter_active && *pending_first_letter_active
                     && !pending_first_letter->empty() && style->white_space!=css_ws_pre ) {
                 int start = 0;
