@@ -11543,9 +11543,10 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
     // pseudo elements handling
     //////////////////////////////////////////////////////
 
-    // See if applying styles requires pseudo element before/after
+    // See if applying styles requires pseudo elements
     bool requires_pseudo_element_before = false;
     bool requires_pseudo_element_after = false;
+    bool requires_pseudo_element_first_letter = false;
     if ( pstyle->pseudo_elem_before_style ) {
         if ( pstyle->pseudo_elem_before_style->display != css_d_none
                 && pstyle->pseudo_elem_before_style->content.length() > 0
@@ -11567,6 +11568,13 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
         }
         delete pstyle->pseudo_elem_after_style;
         pstyle->pseudo_elem_after_style = NULL;
+    }
+    if ( pstyle->pseudo_elem_first_letter_style ) {
+        if ( pstyle->pseudo_elem_first_letter_style->display != css_d_none ) {
+            requires_pseudo_element_first_letter = true;
+        }
+        delete pstyle->pseudo_elem_first_letter_style;
+        pstyle->pseudo_elem_first_letter_style = NULL;
     }
 
     if ( nodeElementId == el_pseudoElem ) {
@@ -11600,6 +11608,8 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
         enode->ensurePseudoElement(true);
     if ( requires_pseudo_element_after )
         enode->ensurePseudoElement(false);
+    if ( requires_pseudo_element_first_letter )
+        enode->ensureFirstLetterPseudoElement();
 
     // For debugging changes in display/white-space when comparing user-agent stylesheets
     // (which should be avoided to prevent the suggestion to reload the document)

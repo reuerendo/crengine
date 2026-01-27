@@ -319,12 +319,14 @@ enum LVCssSelectorPseudoElement
 {
     csspe_before = 1,   // ::before
     csspe_after  = 2,   // ::after
+    csspe_first_letter = 3, // ::first-letter
 };
 
 static const char * css_pseudo_elements[] =
 {
     "before",
     "after",
+    "first-letter",
     NULL
 };
 
@@ -1779,8 +1781,12 @@ lString32 get_applied_content_property( ldomNode * node ) {
     lString32 res;
     css_style_ref_t style = node->getStyle();
     lString32 parsed_content = style->content;
-    if ( parsed_content.empty() )
+    if ( parsed_content.empty() ) {
+        if ( node->getNodeId() == el_pseudoElem && node->hasAttribute(attr_FirstLetter) ) {
+            res = node->getAttributeValue(attr_FirstLetter);
+        }
         return res;
+    }
     int i = 0;
     int parsed_content_len = parsed_content.length();
     while ( i < parsed_content_len ) {
@@ -6973,7 +6979,8 @@ void LVCssSelector::applyToPseudoElement( const ldomNode * node, css_style_rec_t
     css_style_rec_t * target_style = NULL;
     if ( node->getNodeId() == el_pseudoElem ) {
         if (    ( _pseudo_elem == csspe_before && node->hasAttribute(attr_Before) )
-             || ( _pseudo_elem == csspe_after  && node->hasAttribute(attr_After)  ) ) {
+             || ( _pseudo_elem == csspe_after  && node->hasAttribute(attr_After)  )
+             || ( _pseudo_elem == csspe_first_letter && node->hasAttribute(attr_FirstLetter) ) ) {
             target_style = style;
         }
     }
@@ -6995,6 +7002,12 @@ void LVCssSelector::applyToPseudoElement( const ldomNode * node, css_style_rec_t
                 style->pseudo_elem_after_style = new css_style_rec_t;
             }
             target_style = style->pseudo_elem_after_style;
+        }
+        else if ( _pseudo_elem == csspe_first_letter ) {
+            if ( !style->pseudo_elem_first_letter_style ) {
+                style->pseudo_elem_first_letter_style = new css_style_rec_t;
+            }
+            target_style = style->pseudo_elem_first_letter_style;
         }
     }
 
