@@ -3264,7 +3264,7 @@ bool renderAsListStylePositionInside( const css_style_ref_t style, bool is_rtl=f
 // and to get paragraph direction (LTR/RTL/UNSET).
 void renderFinalBlock( ldomNode * enode, LFormattedText * txform, RenderRectAccessor * fmt, lUInt32 & baseflags,
                        int indent, int line_h, TextLangCfg * lang_cfg, int valign_dy, bool * is_link_start,
-                       lString32 running_bidi_ctrlchars )
+                       lString32 running_bidi_ctrlchars, lString32 * pending_first_letter, bool * pending_first_letter_active )
 {
     bool legacy_rendering = !BLOCK_RENDERING_N(enode, ENHANCED);
     if ( enode->isElement() ) {
@@ -4184,7 +4184,17 @@ void renderFinalBlock( ldomNode * enode, LFormattedText * txform, RenderRectAcce
                 // (if <q dir="rtl">...</q>, the added quote (first child pseudo element)
                 // should be inside the RTL bidi isolation.
                 if ( nodeElementId == el_pseudoElem ) {
-                    lString32 content = get_applied_content_property(enode);
+                    lString32 content;
+                    if ( enode->hasAttribute(attr_FirstLetter) ) {
+                        content = enode->getAttributeValue(attr_FirstLetter);
+                        if ( pending_first_letter && pending_first_letter_active ) {
+                            *pending_first_letter = content;
+                            *pending_first_letter_active = true;
+                        }
+                    }
+                    else {
+                        content = get_applied_content_property(enode);
+                    }
                     if ( !content.empty() ) {
                         int em = font->getSize();
                         int letter_spacing = lengthToPx(enode, style->letter_spacing, em);
@@ -4205,7 +4215,8 @@ void renderFinalBlock( ldomNode * enode, LFormattedText * txform, RenderRectAcce
             for (int i=0; i<cnt; i++)
             {
                 ldomNode * child = enode->getChildNode( i );
-                renderFinalBlock( child, txform, fmt, flags, indent, line_h, lang_cfg, valign_dy, is_link_start_p, running_bidi_ctrlchars );
+                renderFinalBlock( child, txform, fmt, flags, indent, line_h, lang_cfg, valign_dy, is_link_start_p,
+                    running_bidi_ctrlchars, pending_first_letter, pending_first_letter_active );
             }
 
             if ( addGeneratedContent ) {
@@ -4410,6 +4421,24 @@ void renderFinalBlock( ldomNode * enode, LFormattedText * txform, RenderRectAcce
             // If erm_final, the background will be drawn by DrawDocument, and should not
             // be drawn over each word by the LFormattedText txform
             lUInt32 bgcl = parent->getRendMethod() == erm_final ? LTEXT_COLOR_CURRENT : getBackgroundColor(style);
+
+            if ( pending_first_letter && pending_first_letter_active && *pending_first_letter_active
+                    && !pending_first_letter->empty() && style->white_space!=css_ws_pre ) {
+                int start = 0;
+                while ( start < txt.length() && (lGetCharProps(txt[start]) & CH_PROP_SPACE) )
+                    start++;
+                int plen = pending_first_letter->length();
+                if ( plen > 0 ) {
+                    if ( start + plen <= txt.length() && txt.substr(start, plen) == *pending_first_letter ) {
+                        txt.erase(start, plen);
+                        *pending_first_letter_active = false;
+                    }
+                    else if ( plen <= txt.length() && txt.substr(0, plen) == *pending_first_letter ) {
+                        txt.erase(0, plen);
+                        *pending_first_letter_active = false;
+                    }
+                }
+            }
 
             switch (style->text_transform) {
             case css_tt_uppercase:

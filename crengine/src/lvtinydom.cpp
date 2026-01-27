@@ -6457,20 +6457,14 @@ void ldomNode::ensureFirstLetterPseudoElement() {
         return;
 
     lString32 firstLetters = original.substr(charIndex, extractLen);
-    lString32 remaining = original;
-    remaining.erase( charIndex, extractLen );
-    textNode->setText( remaining );
 
     // Если insertIndex не был установлен явно циклом, используем индекс текстовой ноды
     if ( insertIndex < 0 )
         insertIndex = textNode->getNodeIndex();
 
     ldomNode * pseudo = insertChildElement( insertIndex, LXML_NS_NONE, el_pseudoElem );
-    
-    lString32 emptyVal; 
-    pseudo->setAttributeValue(LXML_NS_NONE, attr_FirstLetter, emptyVal.c_str());
-    
-    pseudo->insertChildText( 0, firstLetters ); 
+
+    pseudo->setAttributeValue(LXML_NS_NONE, attr_FirstLetter, firstLetters.c_str());
     
     pseudo->initNodeStyle();
     pseudo->initNodeRendMethod();
@@ -20852,7 +20846,10 @@ int ldomNode::renderFinalBlock(  LFormattedTextRef & frmtext, RenderRectAccessor
 
     // Add this node's inner content (text and children nodes) as source text
     // and image fragments into the empty LFormattedText object
-    ::renderFinalBlock( this, f.get(), fmt, flags, 0, -1, lang_cfg );
+    lString32 pending_first_letter;
+    bool pending_first_letter_active = false;
+    ::renderFinalBlock( this, f.get(), fmt, flags, 0, -1, lang_cfg, 0, NULL, lString32::empty_str,
+                        &pending_first_letter, &pending_first_letter_active );
     // We need to store this LFormattedTextRef in the cache for it to
     // survive when leaving this function (some callers do use it).
     cache.set( this, f );
