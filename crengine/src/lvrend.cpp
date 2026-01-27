@@ -4425,18 +4425,70 @@ void renderFinalBlock( ldomNode * enode, LFormattedText * txform, RenderRectAcce
             if ( pending_first_letter && pending_first_letter_active && *pending_first_letter_active
                     && !pending_first_letter->empty() && style->white_space!=css_ws_pre ) {
                 int start = 0;
-                while ( start < txt.length() && (lGetCharProps(txt[start]) & CH_PROP_SPACE) )
-                    start++;
-                int plen = pending_first_letter->length();
+                // Skip leading whitespace and some bidi control chars that might have been injected
+                // (so we can still match the first-letter string against the actual content).
+                while ( start < txt.length() ) {
+                    lChar32 ch = txt[start];
+                    if ( (lGetCharProps(ch) & CH_PROP_SPACE) ) {
+                        start++;
+                        continue;
+                    }
+                    if ( ch == 0x202A || ch == 0x202B || ch == 0x202D || ch == 0x202E || ch == 0x202C ||
+                         ch == 0x2066 || ch == 0x2067 || ch == 0x2068 || ch == 0x2069 ||
+                         ch == 0x200E || ch == 0x200F ) {
+                        start++;
+                        continue;
+                    }
+                    break;
+                }
+
+                lString32 pending = *pending_first_letter;
+                int plen = pending.length();
+                bool removed = false;
                 if ( plen > 0 ) {
-                    if ( start + plen <= txt.length() && txt.substr(start, plen) == *pending_first_letter ) {
+                    if ( start + plen <= txt.length() && txt.substr(start, plen) == pending ) {
                         txt.erase(start, plen);
-                        *pending_first_letter_active = false;
+                        removed = true;
                     }
-                    else if ( plen <= txt.length() && txt.substr(0, plen) == *pending_first_letter ) {
+                    else if ( plen <= txt.length() && txt.substr(0, plen) == pending ) {
                         txt.erase(0, plen);
-                        *pending_first_letter_active = false;
+                        removed = true;
                     }
+                    else {
+                        // If text-transform is applied, the rendered text might not match the
+                        // raw stored pending_first_letter.
+                        lString32 pending_tt = pending;
+                        switch (style->text_transform) {
+                        case css_tt_uppercase:
+                            pending_tt.uppercase();
+                            break;
+                        case css_tt_lowercase:
+                            pending_tt.lowercase();
+                            break;
+                        case css_tt_capitalize:
+                            pending_tt.capitalize();
+                            break;
+                        case css_tt_full_width:
+                        case css_tt_none:
+                        case css_tt_inherit:
+                        default:
+                            break;
+                        }
+                        int plen_tt = pending_tt.length();
+                        if ( plen_tt > 0 ) {
+                            if ( start + plen_tt <= txt.length() && txt.substr(start, plen_tt) == pending_tt ) {
+                                txt.erase(start, plen_tt);
+                                removed = true;
+                            }
+                            else if ( plen_tt <= txt.length() && txt.substr(0, plen_tt) == pending_tt ) {
+                                txt.erase(0, plen_tt);
+                                removed = true;
+                            }
+                        }
+                    }
+                }
+                if ( removed ) {
+                    *pending_first_letter_active = false;
                 }
             }
 
