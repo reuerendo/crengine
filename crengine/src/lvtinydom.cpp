@@ -10229,6 +10229,45 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted) const
         int lastLen = -1;
         int lastOffset = -1;
         ldomXPointerEx xp(node, offset);
+
+        // Robust disambiguation when multiple src_text_fragment_t entries reference
+        // the same node (e.g. ::first-line): clones may keep identical offset/len,
+        // so we must select the srcIndex actually used by the word containing this
+        // pointer.
+        if ( node && node->isText() ) {
+            bool foundByWords = false;
+            for ( int l = 0; l < txtform->GetLineCount() && !foundByWords; l++ ) {
+                const formatted_line_t * frmline = txtform->GetLineInfo(l);
+                for ( int w = 0; w < (int)frmline->word_count; w++ ) {
+                    const formatted_word_t * word = &frmline->words[w];
+                    if ( word->flags & LTEXT_WORD_IS_PAD )
+                        continue;
+                    if ( word->flags & (LTEXT_WORD_IS_IMAGE | LTEXT_WORD_IS_INLINE_BOX) )
+                        continue;
+                    const src_text_fragment_t * src = txtform->GetSrcInfo(word->src_text_index);
+                    if ( !src )
+                        continue;
+                    if ( (src->flags & LTEXT_SRC_IS_OBJECT) != 0 )
+                        continue;
+                    if ( src->object != node )
+                        continue;
+                    int absStart = src->t.offset + word->t.start;
+                    int absEnd = absStart + word->t.len;
+                    if ( requestedOffset >= absStart && requestedOffset < absEnd ) {
+                        srcIndex = word->src_text_index;
+                        srcLen = src->t.len;
+                        foundByWords = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+        if ( srcIndex >= 0 ) {
+            // Keep requestedOffset for the rest of the computation.
+            offset = requestedOffset;
+        }
+        else {
         // When multiple src_text_fragment_t entries reference the same node
         // (possible with ::first-line), pick the one whose [offset, offset+len)
         // contains the requested offset.
@@ -10334,12 +10373,9 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted) const
             offset = lastOffset;
         }
 
-        // Keep the srcIndex/srcLen we resolved above, but restore the original
-        // offset requested by this XPointer before searching inside words/lines.
-        // This is important when multiple src_text_fragment_t reference the same
-        // text node (e.g. due to ::first-line overlays): adjusting 'offset' to a
-        // src fragment start would otherwise break selection rectangles.
+        // Restore the original requested offset before searching inside words/lines.
         offset = requestedOffset;
+        }
 
         // Some state for non-linear bidi word search
         int nearestForwardSrcIndex = -1;
