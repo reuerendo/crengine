@@ -10240,6 +10240,9 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted) const
             int bestForwardAbsStart = -1;
             int bestBackwardSrcIndex = -1;
             int bestBackwardAbsEnd = -1;
+            const formatted_line_t * exactLine = NULL;
+            const formatted_word_t * exactWord = NULL;
+            const src_text_fragment_t * exactSrc = NULL;
             for ( int l = 0; l < txtform->GetLineCount() && !foundByWords; l++ ) {
                 const formatted_line_t * frmline = txtform->GetLineInfo(l);
                 for ( int w = 0; w < (int)frmline->word_count; w++ ) {
@@ -10258,6 +10261,13 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted) const
                     int absStart = src->t.offset + word->t.start;
                     int absEnd = absStart + word->t.len;
                     if ( requestedOffset >= absStart && requestedOffset < absEnd ) {
+                        // Found the exact word containing this offset.
+                        // With ::first-line clones, src_text_index ordering is not
+                        // guaranteed across lines, and the generic code below assumes
+                        // monotonic ordering: compute and return the caret rect now.
+                        exactLine = frmline;
+                        exactWord = word;
+                        exactSrc = src;
                         srcIndex = word->src_text_index;
                         srcLen = src->t.len;
                         foundByWords = true;
@@ -10276,6 +10286,94 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted) const
                         }
                     }
                 }
+            }
+            if ( foundByWords && exactLine && exactWord && exactSrc ) {
+                // Compute glyph rect within exactWord.
+                LVFont *font = (LVFont *) exactSrc->t.font;
+                if ( !font )
+                    return false;
+
+                lString32 str = node->getText();
+                switch ( node->getParentNode()->getStyle()->text_transform ) {
+                    case css_tt_uppercase:
+                        str.uppercase();
+                        break;
+                    case css_tt_lowercase:
+                        str.lowercase();
+                        break;
+                    case css_tt_capitalize:
+                        str.capitalize();
+                        break;
+                    case css_tt_full_width:
+                        break;
+                    default:
+                        break;
+                }
+
+                // offset is absolute in node text. Convert to offset within the word.
+                int wordCharIndex = requestedOffset - (exactSrc->t.offset + exactWord->t.start);
+                if ( wordCharIndex < 0 )
+                    wordCharIndex = 0;
+                if ( wordCharIndex >= exactWord->t.len )
+                    wordCharIndex = exactWord->t.len - 1;
+
+                lUInt16 w[512];
+                lUInt8 flg[512];
+                lUInt32 hints = WORD_FLAGS_TO_FNT_FLAGS(exactWord->flags);
+                font->measureText(
+                    str.c_str() + exactWord->t.start,
+                    exactWord->t.len,
+                    w,
+                    flg,
+                    exactWord->width + 50,
+                    '?',
+                    exactSrc->lang_cfg,
+                    exactSrc->letter_spacing + exactWord->added_letter_spacing,
+                    false,
+                    hints );
+
+                // Get final node rect (same as in the generic path).
+                lvRect rc;
+                finalNode->getAbsRect( rc, extended );
+
+                int chx = (wordCharIndex > 0) ? w[wordCharIndex - 1] : 0;
+                int chw = w[wordCharIndex] - chx;
+                bool word_is_rtl = (exactWord->flags & LTEXT_WORD_DIRECTION_IS_RTL) != 0;
+
+                rect.top = rc.top + exactLine->y;
+                rect.bottom = rect.top + exactLine->height;
+
+                // Start from word x
+                int baseLeft = exactWord->x + rc.left + exactLine->x;
+                if ( word_is_rtl ) {
+                    // In rtl, chx is still logical accumulation; map from right side.
+                    int wordRight = baseLeft + exactWord->width;
+                    rect.right = wordRight - chx;
+                    rect.left = rect.right - (extended ? chw : 1);
+                    if ( extended && !(exactWord->flags & LTEXT_WORD_CAN_HYPH_BREAK_LINE_AFTER) )
+                        rect.left += exactWord->added_letter_spacing;
+                }
+                else {
+                    rect.left = baseLeft + chx;
+                    rect.right = rect.left + (extended ? chw : 1);
+                    if ( extended )
+                        rect.right -= exactWord->added_letter_spacing;
+                }
+
+                if ( adjusted && extended ) {
+                    // Use original requestedOffset to query bearings in node text.
+                    lChar32 ch = str[requestedOffset];
+                    rect.left += font->getLeftSideBearing(ch, true);
+                    rect.right -= font->getRightSideBearing(ch, true);
+                }
+
+                if ( rect.right <= rect.left ) {
+                    if ( word_is_rtl )
+                        rect.left = rect.right - 1;
+                    else
+                        rect.right = rect.left + 1;
+                }
+                return true;
             }
             if ( !foundByWords ) {
                 int pick = bestForwardSrcIndex >= 0 ? bestForwardSrcIndex : bestBackwardSrcIndex;
