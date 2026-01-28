@@ -10236,6 +10236,10 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted) const
         // pointer.
         if ( node && node->isText() ) {
             bool foundByWords = false;
+            int bestForwardSrcIndex = -1;
+            int bestForwardAbsStart = -1;
+            int bestBackwardSrcIndex = -1;
+            int bestBackwardAbsEnd = -1;
             for ( int l = 0; l < txtform->GetLineCount() && !foundByWords; l++ ) {
                 const formatted_line_t * frmline = txtform->GetLineInfo(l);
                 for ( int w = 0; w < (int)frmline->word_count; w++ ) {
@@ -10258,6 +10262,28 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted) const
                         srcLen = src->t.len;
                         foundByWords = true;
                         break;
+                    }
+                    if ( absStart >= requestedOffset ) {
+                        if ( bestForwardSrcIndex < 0 || absStart < bestForwardAbsStart ) {
+                            bestForwardSrcIndex = word->src_text_index;
+                            bestForwardAbsStart = absStart;
+                        }
+                    }
+                    if ( absEnd <= requestedOffset ) {
+                        if ( bestBackwardSrcIndex < 0 || absEnd > bestBackwardAbsEnd ) {
+                            bestBackwardSrcIndex = word->src_text_index;
+                            bestBackwardAbsEnd = absEnd;
+                        }
+                    }
+                }
+            }
+            if ( !foundByWords ) {
+                int pick = bestForwardSrcIndex >= 0 ? bestForwardSrcIndex : bestBackwardSrcIndex;
+                if ( pick >= 0 ) {
+                    const src_text_fragment_t * picked = txtform->GetSrcInfo(pick);
+                    if ( picked ) {
+                        srcIndex = pick;
+                        srcLen = picked->t.len;
                     }
                 }
             }
