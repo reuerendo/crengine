@@ -1,0 +1,123 @@
+name: Build libkoreader-cre.so
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-libkoreader-cre:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout crengine
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install build dependencies
+        run: |
+          set -eux
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            autoconf \
+            automake \
+            bison \
+            build-essential \
+            ca-certificates \
+            cmake \
+            curl \
+            file \
+            flex \
+            gawk \
+            gcc-multilib \
+            g++-multilib \
+            gettext \
+            git \
+            gperf \
+            help2man \
+            libc6-dev-i386 \
+            libc6:i386 \
+            libffi-dev \
+            libncurses-dev \
+            libpcre2-dev \
+            libsdl2-2.0-0 \
+            libsdl2-dev \
+            libstdc++6:i386 \
+            libtool \
+            libtool-bin \
+            luarocks \
+            meson \
+            nasm \
+            ninja-build \
+            patch \
+            perl \
+            pkg-config \
+            python3 \
+            python3-pip \
+            texinfo \
+            unzip \
+            wget \
+            zlib1g:i386
+
+      - name: Upgrade meson to latest version
+        run: |
+          python3 -m pip install --upgrade meson
+
+      - name: Download and setup PocketBook toolchain
+        run: |
+          set -eux
+          cd $HOME
+          wget https://github.com/koreader/koxtoolchain/releases/download/2025.05/pocketbook.tar.gz
+          tar -xzf pocketbook.tar.gz
+          rm pocketbook.tar.gz
+
+      - name: Setup toolchain environment
+        run: |
+          echo "$HOME/x-tools/arm-pocketbook-linux-gnueabi/bin" >> $GITHUB_PATH
+
+      - name: Checkout koreader-base
+        run: |
+          set -eux
+          git clone --depth 1 https://github.com/koreader/koreader-base.git koreader-base
+          git -C koreader-base submodule update --init --recursive --depth 1
+
+      - name: Use current crengine sources in kpvcrlib
+        run: |
+          set -eux
+          rm -rf koreader-base/thirdparty/kpvcrlib/crengine
+          ln -s "$GITHUB_WORKSPACE" koreader-base/thirdparty/kpvcrlib/crengine
+
+      - name: Build (koreader-cre target only)
+        run: |
+          set -eux
+          make -C koreader-base \
+            TARGET=pocketbook \
+            KODEBUG=0 \
+            koreader-cre
+
+      - name: Collect artifacts
+        run: |
+          set -eux
+          mkdir -p artifacts
+          find koreader-base -type f -name 'libkoreader-cre.so' -print
+          find koreader-base -type f -name 'libkoreader-cre.so' -exec cp -v '{}' artifacts/ \;
+          for so in artifacts/libkoreader-cre.so; do
+            test -f "$so"
+            file "$so"
+            arm-pocketbook-linux-gnueabi-readelf -h "$so" | sed -n '1,25p'
+            arm-pocketbook-linux-gnueabi-strip --strip-unneeded "$so"
+            file "$so"
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: libkoreader-cre-pocketbook
+          path: artifacts/
+          if-no-files-found: error
