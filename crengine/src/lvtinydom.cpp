@@ -10187,6 +10187,7 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted) const
 
         ldomNode *node = getNode();
         int offset = getOffset();
+        const int requestedOffset = offset;
 ////        ldomXPointerEx xp(node, offset);
 ////        if ( !node->isText() ) {
 ////            //ldomXPointerEx xp(node, offset);
@@ -10332,6 +10333,13 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted) const
             srcLen = lastLen;
             offset = lastOffset;
         }
+
+        // Keep the srcIndex/srcLen we resolved above, but restore the original
+        // offset requested by this XPointer before searching inside words/lines.
+        // This is important when multiple src_text_fragment_t reference the same
+        // text node (e.g. due to ::first-line overlays): adjusting 'offset' to a
+        // src fragment start would otherwise break selection rectangles.
+        offset = requestedOffset;
 
         // Some state for non-linear bidi word search
         int nearestForwardSrcIndex = -1;
