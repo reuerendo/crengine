@@ -10234,7 +10234,25 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted) const
         // the same node (e.g. ::first-line): clones may keep identical offset/len,
         // so we must select the srcIndex actually used by the word containing this
         // pointer.
+        bool needWordScanForDisambiguation = false;
         if ( node && node->isText() ) {
+            int sameNodeTextSrcCount = 0;
+            for ( int i=0; i<txtform->GetSrcCount(); i++ ) {
+                const src_text_fragment_t * src = txtform->GetSrcInfo(i);
+                if ( !src )
+                    continue;
+                if ( (src->flags & LTEXT_SRC_IS_OBJECT) != 0 )
+                    continue;
+                if ( src->object == node ) {
+                    sameNodeTextSrcCount++;
+                    if ( sameNodeTextSrcCount > 1 ) {
+                        needWordScanForDisambiguation = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if ( needWordScanForDisambiguation ) {
             bool foundByWords = false;
             int bestForwardSrcIndex = -1;
             int bestForwardAbsStart = -1;
