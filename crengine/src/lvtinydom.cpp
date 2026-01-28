@@ -10228,26 +10228,102 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted) const
         int lastLen = -1;
         int lastOffset = -1;
         ldomXPointerEx xp(node, offset);
+        // When multiple src_text_fragment_t entries reference the same node
+        // (possible with ::first-line), pick the one whose [offset, offset+len)
+        // contains the requested offset.
+        int bestSameNodeIndex = -1;
+        int bestSameNodeLen = -1;
+        int bestSameNodeOffset = -1;
+        bool bestSameNodeContains = false;
         for ( int i=0; i<txtform->GetSrcCount(); i++ ) {
             const src_text_fragment_t * src = txtform->GetSrcInfo(i);
             bool isObject = (src->flags&LTEXT_SRC_IS_OBJECT)!=0;
             if ( isObject && src->o.objflags & LTEXT_OBJECT_IS_FLOAT ) // skip floats
                 continue;
             if ( src->object == node ) {
-                srcIndex = i;
-                srcLen = isObject ? 0 : src->t.len;
-                break;
+                // Track best match for this node
+                if ( !isObject ) {
+                    int s_off = src->t.offset;
+                    int s_len = src->t.len;
+                    bool contains = ( offset >= s_off && offset < s_off + s_len );
+                    if ( contains ) {
+                        // Prefer a containing range; if multiple contain, prefer the
+                        // one with the greatest offset (most specific).
+                        if ( !bestSameNodeContains || s_off > bestSameNodeOffset ) {
+                            bestSameNodeContains = true;
+                            bestSameNodeIndex = i;
+                            bestSameNodeLen = s_len;
+                            bestSameNodeOffset = s_off;
+                        }
+                    }
+                    else if ( !bestSameNodeContains ) {
+                        // No containing match yet: keep the nearest one before the offset,
+                        // otherwise keep the earliest one after.
+                        if ( bestSameNodeIndex < 0 ) {
+                            bestSameNodeIndex = i;
+                            bestSameNodeLen = s_len;
+                            bestSameNodeOffset = s_off;
+                        }
+                        else {
+                            bool best_before = bestSameNodeOffset <= offset;
+                            bool cur_before = s_off <= offset;
+                            if ( best_before && cur_before ) {
+                                if ( s_off > bestSameNodeOffset ) {
+                                    bestSameNodeIndex = i;
+                                    bestSameNodeLen = s_len;
+                                    bestSameNodeOffset = s_off;
+                                }
+                            }
+                            else if ( !best_before && !cur_before ) {
+                                if ( s_off < bestSameNodeOffset ) {
+                                    bestSameNodeIndex = i;
+                                    bestSameNodeLen = s_len;
+                                    bestSameNodeOffset = s_off;
+                                }
+                            }
+                            else if ( !best_before && cur_before ) {
+                                // Prefer a src starting before the offset over one after.
+                                bestSameNodeIndex = i;
+                                bestSameNodeLen = s_len;
+                                bestSameNodeOffset = s_off;
+                            }
+                        }
+                    }
+                }
+                else {
+                    // Object src: accept it as the match if we don't have any text src.
+                    if ( bestSameNodeIndex < 0 ) {
+                        bestSameNodeIndex = i;
+                        bestSameNodeLen = 0;
+                        bestSameNodeOffset = 0;
+                        bestSameNodeContains = true;
+                    }
+                }
+                continue;
             }
             lastIndex = i;
             lastLen =  isObject ? 0 : src->t.len;
             lastOffset = isObject ? 0 : src->t.offset;
             ldomXPointerEx xp2((ldomNode*)src->object, lastOffset);
             if ( xp2.compare(xp)>0 ) {
-                srcIndex = i;
-                srcLen = lastLen;
-                offset = lastOffset;
+                // If we have a match for this node, prefer it over the generic fallback.
+                if ( bestSameNodeIndex >= 0 ) {
+                    srcIndex = bestSameNodeIndex;
+                    srcLen = bestSameNodeLen;
+                    offset = bestSameNodeOffset;
+                }
+                else {
+                    srcIndex = i;
+                    srcLen = lastLen;
+                    offset = lastOffset;
+                }
                 break;
             }
+        }
+        if ( srcIndex == -1 && bestSameNodeIndex >= 0 ) {
+            srcIndex = bestSameNodeIndex;
+            srcLen = bestSameNodeLen;
+            offset = bestSameNodeOffset;
         }
         if ( srcIndex == -1 ) {
             if ( lastIndex<0 )
