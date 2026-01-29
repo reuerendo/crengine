@@ -3264,7 +3264,7 @@ bool renderAsListStylePositionInside( const css_style_ref_t style, bool is_rtl=f
 // and to get paragraph direction (LTR/RTL/UNSET).
 void renderFinalBlock( ldomNode * enode, LFormattedText * txform, RenderRectAccessor * fmt, lUInt32 & baseflags,
                        int indent, int line_h, TextLangCfg * lang_cfg, int valign_dy, bool * is_link_start,
-                       lString32 running_bidi_ctrlchars )
+                       lString32 running_bidi_ctrlchars, lString32 * pending_first_letter, bool * pending_first_letter_active )
 {
     bool legacy_rendering = !BLOCK_RENDERING_N(enode, ENHANCED);
     if ( enode->isElement() ) {
@@ -4184,7 +4184,17 @@ void renderFinalBlock( ldomNode * enode, LFormattedText * txform, RenderRectAcce
                 // (if <q dir="rtl">...</q>, the added quote (first child pseudo element)
                 // should be inside the RTL bidi isolation.
                 if ( nodeElementId == el_pseudoElem ) {
-                    lString32 content = get_applied_content_property(enode);
+                    lString32 content;
+                    if ( enode->hasAttribute(attr_FirstLetter) ) {
+                        content = enode->getAttributeValue(attr_FirstLetter);
+                        if ( pending_first_letter && pending_first_letter_active ) {
+                            *pending_first_letter = content;
+                            *pending_first_letter_active = true;
+                        }
+                    }
+                    else {
+                        content = get_applied_content_property(enode);
+                    }
                     if ( !content.empty() ) {
                         int em = font->getSize();
                         int letter_spacing = lengthToPx(enode, style->letter_spacing, em);
@@ -4205,7 +4215,8 @@ void renderFinalBlock( ldomNode * enode, LFormattedText * txform, RenderRectAcce
             for (int i=0; i<cnt; i++)
             {
                 ldomNode * child = enode->getChildNode( i );
-                renderFinalBlock( child, txform, fmt, flags, indent, line_h, lang_cfg, valign_dy, is_link_start_p, running_bidi_ctrlchars );
+                renderFinalBlock( child, txform, fmt, flags, indent, line_h, lang_cfg, valign_dy, is_link_start_p,
+                    running_bidi_ctrlchars, pending_first_letter, pending_first_letter_active );
             }
 
             if ( addGeneratedContent ) {
@@ -4410,6 +4421,92 @@ void renderFinalBlock( ldomNode * enode, LFormattedText * txform, RenderRectAcce
             // If erm_final, the background will be drawn by DrawDocument, and should not
             // be drawn over each word by the LFormattedText txform
             lUInt32 bgcl = parent->getRendMethod() == erm_final ? LTEXT_COLOR_CURRENT : getBackgroundColor(style);
+
+            if ( pending_first_letter && pending_first_letter_active ) {
+                if ( !*pending_first_letter_active ) {
+                    if ( parent && !parent->isNull() ) {
+                        int idx = enode->getNodeIndex();
+                        if ( idx > 0 ) {
+                            ldomNode * prev = parent->getChildNode( idx - 1 );
+                            if ( prev && !prev->isNull() && prev->isElement() && prev->getNodeId() == el_floatBox ) {
+                                ldomNode * n = prev;
+                                while ( n && !n->isNull() && n->isElement() && n->getChildCount() > 0 ) {
+                                    ldomNode * c0 = n->getChildNode(0);
+                                    if ( !c0 || c0->isNull() )
+                                        break;
+                                    n = c0;
+                                    if ( n->isElement() && n->getNodeId() == el_pseudoElem && n->hasAttribute(attr_FirstLetter) ) {
+                                        *pending_first_letter = n->getAttributeValue(attr_FirstLetter);
+                                        *pending_first_letter_active = true;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if ( *pending_first_letter_active && !pending_first_letter->empty() && style->white_space!=css_ws_pre ) {
+                    auto skip_prefix = [&txt]() {
+                        int start = 0;
+                        while ( start < txt.length() ) {
+                            lChar32 ch = txt[start];
+                            if ( (lGetCharProps(ch) & CH_PROP_SPACE) ) {
+                                start++;
+                                continue;
+                            }
+                            if ( ch == 0x202A || ch == 0x202B || ch == 0x202D || ch == 0x202E || ch == 0x202C ||
+                                 ch == 0x2066 || ch == 0x2067 || ch == 0x2068 || ch == 0x2069 ||
+                                 ch == 0x200E || ch == 0x200F ) {
+                                start++;
+                                continue;
+                            }
+                            break;
+                        }
+                        return start;
+                    };
+
+                    auto try_remove = [&txt](int start, const lString32 & s) {
+                        int plen = s.length();
+                        if ( plen <= 0 )
+                            return false;
+                        if ( start + plen <= txt.length() && txt.substr(start, plen) == s ) {
+                            txt.erase(start, plen);
+                            return true;
+                        }
+                        if ( plen <= txt.length() && txt.substr(0, plen) == s ) {
+                            txt.erase(0, plen);
+                            return true;
+                        }
+                        return false;
+                    };
+
+                    int start = skip_prefix();
+                    bool removed = try_remove(start, *pending_first_letter);
+                    if ( !removed ) {
+                        lString32 pending_tt = *pending_first_letter;
+                        switch (style->text_transform) {
+                        case css_tt_uppercase:
+                            pending_tt.uppercase();
+                            break;
+                        case css_tt_lowercase:
+                            pending_tt.lowercase();
+                            break;
+                        case css_tt_capitalize:
+                            pending_tt.capitalize();
+                            break;
+                        case css_tt_full_width:
+                        case css_tt_none:
+                        case css_tt_inherit:
+                        default:
+                            break;
+                        }
+                        removed = try_remove(start, pending_tt);
+                    }
+                    if ( removed )
+                        *pending_first_letter_active = false;
+                }
+            }
 
             switch (style->text_transform) {
             case css_tt_uppercase:
@@ -7480,6 +7577,13 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
         // We always use the style height for <HR>, to actually have a height to fill
         // with its color (as some of our css files render them via height)
         css_length_t style_height = style->height;
+        // Check for fit-content in height: treat as auto (no fixed height)
+        bool height_fit_content = (style_height.type == css_val_unspecified && 
+                                   style_height.value == css_generic_fit_content);
+        // Convert fit-content to auto so normal height logic applies
+        if ( height_fit_content ) {
+            style_height.value = css_generic_auto;
+        }
         if ( is_empty_line_elem && style_height.type == css_val_unspecified ) {
             // No height specified: default to line-height, just like
             // if it were rendered final.
@@ -7749,10 +7853,39 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
     }
     else { // regular element (non-float)
         bool apply_style_width = false;
+        bool is_fit_content = false;  // Track if we're using fit-content
         css_length_t style_width = style->width;
+        // Check for fit-content: treat as shrink-to-content width
+        bool has_fit_content_width = (style_width.type == css_val_unspecified && 
+                                      style_width.value == css_generic_fit_content);
+		// For fit-content, we need to get the content width similar to floats
+		if ( has_fit_content_width ) {
+			int max_content_width = 0;
+			int min_content_width = 0;
+			int rend_flags = flags | BLOCK_RENDERING_ENSURE_STYLE_WIDTH | BLOCK_RENDERING_ALLOW_STYLE_W_H_ABSOLUTE_UNITS;
+			// getRenderedWidths() returns width including padding/margin of children,
+			// but we need to ignore margin of this element itself (ignoreMargin=true)
+			// Note: getRenderedWidths() already includes padding/margin/border of children
+			getRenderedWidths(enode, max_content_width, min_content_width, direction, true, rend_flags);
+			
+			// getRenderedWidths() returns the content width including padding/margin/border
+			// of children, but for fit-content we want the shrink-to-fit width.
+			// The returned max_content_width should be the width needed by the content.
+			// We need to ensure it doesn't exceed available width (container minus our margins).
+			int available_width = container_width - margin_left - margin_right;
+			
+			// Use the maximum of content width, but not exceeding available width
+			width = max_content_width;
+			if (width > available_width) {
+				width = available_width;
+			}
+			
+			auto_width = false;
+			is_fit_content = true;
+		}
         // table sub-elements widths are managed by the table layout algorithm
         // (but trust width if the table sub element is one of our boxing elements)
-        if ( style->display <= css_d_table || is_boxing_elem ) {
+        else if ( style->display <= css_d_table || is_boxing_elem ) {
             // Only if ENSURE_STYLE_WIDTH as we may prefer having
             // full width text blocks to not waste reading width with blank areas.
             if ( style_width.type != css_val_unspecified ) {
@@ -7801,7 +7934,8 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
             }
             // printf("  apply_style_width => %d\n", width);
         }
-        else {
+        else if ( !is_fit_content ) {
+            // Only set auto width if we're not already processing fit-content
             width = container_width - margin_left - margin_right;
             auto_width = true; // no more width tweaks
         }
@@ -7812,6 +7946,10 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
             // this is ensured naturally by the inner content measurement)
             // We do max-width first, and then min-width (https://www.w3.org/TR/CSS2/visudet.html#min-max-widths)
             css_length_t style_max_width = style->max_width;
+            // Check for fit-content in max-width
+            if ( style_max_width.type == css_val_unspecified && style_max_width.value == css_generic_fit_content ) {
+                style_max_width.value = css_generic_auto; // treat as no max-width constraint
+            }
             if ( style_max_width.type != css_val_unspecified ) {
                 if ( BLOCK_RENDERING(flags, ALLOW_STYLE_W_H_ABSOLUTE_UNITS) ||
                      style_max_width.type == css_val_screen_px || // in case it was converted to screen_px beforehand
@@ -7826,6 +7964,10 @@ void renderBlockElementEnhanced( FlowState * flow, ldomNode * enode, int x, int 
                 }
             }
             css_length_t style_min_width = style->min_width;
+            // Check for fit-content in min-width
+            if ( style_min_width.type == css_val_unspecified && style_min_width.value == css_generic_fit_content ) {
+                style_min_width.value = css_generic_auto; // treat as no min-width constraint
+            }
             if ( style_min_width.type != css_val_unspecified ) {
                 if ( BLOCK_RENDERING(flags, ALLOW_STYLE_W_H_ABSOLUTE_UNITS) ||
                      style_min_width.type == css_val_screen_px || // in case it was converted to screen_px beforehand
@@ -10551,7 +10693,7 @@ inline bool inheritLength( css_length_t & val, css_length_t & parent_val, int pa
 
 void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef parent_font )
 {
-    CR_UNUSED(parent_font);
+    // parent_font is used by some callers, and can be NULL.
     //lvdomElementFormatRec * fmt = node->getRenderData();
     css_style_ref_t style( new css_style_rec_t );
     css_style_rec_t * pstyle = style.get();
@@ -10716,6 +10858,159 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
             }
         }
     }
+
+	// initial-letter on ::first-letter
+	// We only support it on the actual pseudo element node (el_pseudoElem with attr_FirstLetter).
+	// Render it like a drop-cap: float:left, with auto font-size based on the parent line height,
+	// and apply sink by shifting it down via margin-top.
+	if ( nodeElementId == el_pseudoElem && enode->hasAttribute(attr_FirstLetter) ) {
+		lInt16 n = pstyle->initial_letter_size;
+		lInt16 m = pstyle->initial_letter_sink;
+		if ( n > 0 ) {
+			if ( m <= 0 )
+				m = n;
+			ldomNode * parent = enode->getUnboxedParent();
+			if ( parent && !parent->getStyle().isNull() ) {
+				LVFontRef pf = parent->getFont();
+				int base_font_size = lengthToPx(parent, parent_style->font_size, 0, 0);
+				if ( base_font_size < 1 )
+					base_font_size = 1;
+
+				// Use computed CSS line-height when available (often larger than font height).
+				// Match main text rendering behavior, including KOReader interline scaling.
+				int line_height_px = -1;
+				if ( parent_style->line_height.type == css_val_unspecified &&
+							parent_style->line_height.value == css_generic_normal ) {
+					if ( !pf.isNull() )
+						line_height_px = pf->getHeight(); // line-height: normal
+					// Scale line-height according to document's _interlineScaleFactor
+					// (this is also applied to 'normal' in main text rendering).
+					int interline_scale_factor = doc->getInterlineScaleFactor();
+					if ( interline_scale_factor != INTERLINE_SCALE_FACTOR_NO_SCALE ) {
+						line_height_px = (line_height_px * interline_scale_factor) >> INTERLINE_SCALE_FACTOR_SHIFT;
+					}
+				}
+				else {
+					line_height_px = lengthToPx(parent, parent_style->line_height,
+											base_font_size, base_font_size, true);
+					// Scale line-height according to document's _interlineScaleFactor, but
+					// not if it was already in screen_px (already scaled when inherited).
+					int interline_scale_factor = doc->getInterlineScaleFactor();
+					if ( parent_style->line_height.type != css_val_screen_px &&
+								interline_scale_factor != INTERLINE_SCALE_FACTOR_NO_SCALE ) {
+						line_height_px = (line_height_px * interline_scale_factor) >> INTERLINE_SCALE_FACTOR_SHIFT;
+					}
+				}
+				if ( line_height_px < 1 ) {
+					if ( !pf.isNull() )
+						line_height_px = pf->getHeight();
+				}
+				if ( line_height_px < 1 )
+					line_height_px = base_font_size;
+
+				// --- Correct target height: (n-1) full lines + cap-height of first line ---
+				int target_height_px = 0;
+				int base_size = 0;
+				int base_baseline = 0;
+				int base_cap_height = 0;
+
+				if ( !pf.isNull() ) {
+					base_size = pf->getSize();
+					base_baseline = pf->getBaseline();
+					LVFont::glyph_info_t gi;
+
+					// Cap-height from 'H'
+					if ( base_size > 0 && pf->getGlyphInfo((lUInt32)(lChar32)'H', &gi) ) {
+						base_cap_height = gi.originY; // baseline -> top of glyph bbox
+					}
+					if ( base_cap_height <= 0 ) {
+						// Fallback: use baseline as an approximation.
+						base_cap_height = base_baseline;
+					}
+				}
+
+				target_height_px =
+					(n - 1) * line_height_px
+				  + base_cap_height;
+
+				if ( target_height_px < 1 )
+					target_height_px = 1;
+
+				// Scale font-size so that cap-height (baseline->cap) ~= target_height_px.
+				int target_font_px = target_height_px;
+				if ( base_cap_height > 0 && base_size > 0 ) {
+					target_font_px =
+						(target_height_px * base_size + base_cap_height/2)
+						/ base_cap_height;
+				}
+				if ( target_font_px < 1 )
+					target_font_px = 1;
+
+				pstyle->float_ = css_f_left;
+				pstyle->font_size.type = css_val_screen_px;
+				pstyle->font_size.value = target_font_px;
+				// Match Gecko: the first-letter participates in line layout and its box is
+				// vertically aligned within the computed line-height. Ensure it stays aligned
+				// with the parent's interline, but do not make its own line box smaller than
+				// its font height (or text from following lines may overlap the dropcap).
+				LVFontRef drop_font = getFont(enode, pstyle, doc->getDocIndex());
+				int drop_line_height_px = line_height_px;
+				if ( !drop_font.isNull() ) {
+					int dh = drop_font->getHeight();
+					if ( dh > drop_line_height_px )
+						drop_line_height_px = dh;
+				}
+				pstyle->line_height.type = css_val_screen_px;
+				pstyle->line_height.value = drop_line_height_px;
+
+				// Avoid extra empty space below the drop cap due to font descent.
+				// Float box height will include descent, while CSS initial-letter sizing
+				// is based on baseline->cap-height. Compensate with a negative margin-bottom.
+				if ( !pf.isNull() ) {
+					int pf_height = pf->getHeight();
+					int pf_baseline = pf->getBaseline();
+					int pf_size = pf->getSize();
+					int base_descent = pf_height - pf_baseline;
+					if ( base_descent > 0 && pf_size > 0 ) {
+						int descent_px = (target_font_px * base_descent + pf_size/2) / pf_size;
+						if ( descent_px > 0 ) {
+							// margin[3] is margin-bottom (see lvstyles.h)
+							pstyle->margin[3].type = css_val_screen_px;
+							pstyle->margin[3].value = -descent_px;
+						}
+					}
+				}
+
+				// Baseline alignment: align dropcap baseline with the baseline of line m.
+				// (m==1 => raised cap, m==n => drop cap with baseline on last line)
+				int margin_top_px = 0;
+				if ( !pf.isNull() ) {
+					if ( m < 1 )
+						m = 1;
+					else if ( m > n )
+						m = n;
+					// Floats are positioned by the formatter with a Y origin that behaves like
+					// the baseline of the first line. Align to the baseline of line m via a
+					// baseline-to-baseline offset.
+					// Baseline-in-line-box model (same as lvtextfm.cpp strut baseline):
+					// baseline = fontBaseline + (lineHeight - fontHeight)/2
+					int parent_half_leading = (line_height_px - pf->getHeight()) / 2;
+					int target_baseline = (m - 1) * line_height_px + pf->getBaseline() + parent_half_leading;
+					int drop_baseline = 0;
+					if ( !drop_font.isNull() ) {
+						int drop_half_leading = (drop_line_height_px - drop_font->getHeight()) / 2;
+						drop_baseline = drop_font->getBaseline() + drop_half_leading;
+						margin_top_px = target_baseline - drop_baseline;
+					}
+				}
+				if ( margin_top_px != 0 ) {
+					// margin[2] is margin-top (see lvstyles.h)
+					pstyle->margin[2].type = css_val_screen_px;
+					pstyle->margin[2].value = margin_top_px;
+				}
+			}
+		}
+	}
 
     #if MATHML_SUPPORT==1
         // We apply our internal MathML stylesheet *after* user-agent (including style tweaks)
@@ -11406,9 +11701,110 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
     // pseudo elements handling
     //////////////////////////////////////////////////////
 
-    // See if applying styles requires pseudo element before/after
+    // See if applying styles requires pseudo elements
     bool requires_pseudo_element_before = false;
     bool requires_pseudo_element_after = false;
+    bool requires_pseudo_element_first_letter = false;
+    if ( pstyle->pseudo_elem_first_line_style ) {
+        if ( pstyle->pseudo_elem_first_line_style->display != css_d_none ) {
+            css_style_rec_t * ps = pstyle->pseudo_elem_first_line_style;
+            css_style_ref_t first_line_style( new css_style_rec_t(*pstyle) );
+            css_style_rec_t * fl = first_line_style.get();
+
+            int base_font_size = lengthToPx(enode, pstyle->font_size, 0, 0);
+            if ( base_font_size < 1 )
+                base_font_size = 1;
+
+            if ( ps->font_family != css_ff_inherit )
+                fl->font_family = ps->font_family;
+            if ( !ps->font_name.empty() )
+                fl->font_name = ps->font_name;
+            if ( ps->font_style != css_fs_inherit )
+                fl->font_style = ps->font_style;
+            if ( ps->font_weight != css_fw_inherit )
+                fl->font_weight = ps->font_weight;
+
+            if ( ps->font_features.type == css_val_inherited && ps->font_features.value == 0 ) {
+                // keep base
+            }
+            else {
+                fl->font_features.value = ps->font_features.value | pstyle->font_features.value;
+                fl->font_features.type = css_val_unspecified;
+            }
+
+            if ( ps->font_size.type != css_val_inherited ) {
+                css_length_t fsz = ps->font_size;
+                switch ( fsz.type ) {
+                    case css_val_em:
+                        fsz.value = base_font_size * fsz.value / 256;
+                        fsz.type = css_val_screen_px;
+                        break;
+                    case css_val_ex:
+                    case css_val_ch:
+                        fsz.value = base_font_size * fsz.value / 512;
+                        fsz.type = css_val_screen_px;
+                        break;
+                    case css_val_percent:
+                        fsz.value = base_font_size * fsz.value / 100 / 256;
+                        fsz.type = css_val_screen_px;
+                        break;
+                    case css_val_screen_px:
+                    case css_val_px:
+                    case css_val_in:
+                    case css_val_cm:
+                    case css_val_mm:
+                    case css_val_pt:
+                    case css_val_pc:
+                    case css_val_rem:
+                    case css_val_vw:
+                    case css_val_vh:
+                    case css_val_vmin:
+                    case css_val_vmax:
+                        // leave as-is, it will be resolved by getFont() or lengthToPx() when needed
+                        break;
+                    default:
+                        // keep base
+                        fsz = pstyle->font_size;
+                        break;
+                }
+                fl->font_size = fsz;
+            }
+
+            if ( ps->letter_spacing.type != css_val_inherited ) {
+                css_length_t lsp = ps->letter_spacing;
+                switch ( lsp.type ) {
+                    case css_val_em:
+                        lsp.value = base_font_size * lsp.value / 256;
+                        lsp.type = css_val_screen_px;
+                        break;
+                    case css_val_ex:
+                    case css_val_ch:
+                        lsp.value = base_font_size * lsp.value / 512;
+                        lsp.type = css_val_screen_px;
+                        break;
+                    case css_val_percent:
+                        lsp.value = base_font_size * lsp.value / 100 / 256;
+                        lsp.type = css_val_screen_px;
+                        break;
+                    default:
+                        break;
+                }
+                fl->letter_spacing = lsp;
+            }
+
+            fl->flags = 0;
+            fl->pseudo_elem_before_style = NULL;
+            fl->pseudo_elem_after_style = NULL;
+            fl->pseudo_elem_first_letter_style = NULL;
+            fl->pseudo_elem_first_line_style = NULL;
+            doc->setNodeFirstLineStyle( enode->getDataIndex(), first_line_style );
+        }
+        else {
+            doc->setNodeFirstLineStyle( enode->getDataIndex(), css_style_ref_t() );
+        }
+        delete pstyle->pseudo_elem_first_line_style;
+        pstyle->pseudo_elem_first_line_style = NULL;
+    }
     if ( pstyle->pseudo_elem_before_style ) {
         if ( pstyle->pseudo_elem_before_style->display != css_d_none
                 && pstyle->pseudo_elem_before_style->content.length() > 0
@@ -11430,6 +11826,13 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
         }
         delete pstyle->pseudo_elem_after_style;
         pstyle->pseudo_elem_after_style = NULL;
+    }
+    if ( pstyle->pseudo_elem_first_letter_style ) {
+        if ( pstyle->pseudo_elem_first_letter_style->display != css_d_none ) {
+            requires_pseudo_element_first_letter = true;
+        }
+        delete pstyle->pseudo_elem_first_letter_style;
+        pstyle->pseudo_elem_first_letter_style = NULL;
     }
 
     if ( nodeElementId == el_pseudoElem ) {
@@ -11463,6 +11866,8 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
         enode->ensurePseudoElement(true);
     if ( requires_pseudo_element_after )
         enode->ensurePseudoElement(false);
+    if ( requires_pseudo_element_first_letter )
+        enode->ensureFirstLetterPseudoElement();
 
     // For debugging changes in display/white-space when comparing user-agent stylesheets
     // (which should be avoided to prevent the suggestion to reload the document)
@@ -11677,7 +12082,10 @@ void getRenderedWidths(ldomNode * node, int &maxWidth, int &minWidth, int direct
         bool is_boxing_elem = nodeElementId <= EL_BOXING_END && nodeElementId >= EL_BOXING_START;
         bool use_style_width = false;
         css_length_t style_width = style->width;
-        if ( BLOCK_RENDERING(rendFlags, ENSURE_STYLE_WIDTH) ) {
+        // Check for fit-content: treat as shrink-to-content width (don't use fixed width)
+        bool has_fit_content_width = (style_width.type == css_val_unspecified && 
+                                      style_width.value == css_generic_fit_content);
+        if ( BLOCK_RENDERING(rendFlags, ENSURE_STYLE_WIDTH) && !has_fit_content_width ) {
             // Ignore width for table sub-elements - but allow it for our boxing elements, as we can set it
             // for some explicit rendering purpose (i.e. for the MathML <msqrt> mathBox root symbol)
             if ( style->display <= css_d_table || is_boxing_elem ) {

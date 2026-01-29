@@ -915,6 +915,11 @@ public:
     // Ensure this node has a ::before/::after pseudo element as
     // child, creating it if needed and possible
     void ensurePseudoElement( bool is_before );
+    // Ensure this node has a ::first-letter pseudo element as
+    // child, creating it if needed and possible
+    void ensureFirstLetterPseudoElement();
+    // Remove existing ::first-letter pseudo element and restore text if needed
+    void removeFirstLetterPseudoElement();
 
     /// if stylesheet file name is set, and file is found, set stylesheet to its value
     bool applyNodeStylesheet();
@@ -2565,6 +2570,8 @@ private:
 
     LVHashTable<lUInt32, ListNumberingPropsRef> lists;
 
+    LVHashTable<lUInt32, css_style_ref_t> _firstLineStyles;
+
     LVEmbeddedFontList _fontList;
 
     lString8Collection _fontFamilyFonts;
@@ -2574,6 +2581,9 @@ private:
 #if BUILD_LITE!=1
     /// load document cache file content
     bool loadCacheFileContent(CacheLoadingCallback * formatCallback, LVDocViewCallback * progressCallback=NULL);
+
+    bool saveFirstLineStylesData();
+    bool loadFirstLineStylesData();
 
     /// save changes to cache file
     bool saveChanges();
@@ -2604,6 +2614,10 @@ public:
     ListNumberingPropsRef getNodeNumberingProps( lUInt32 nodeDataIndex );
     void setNodeNumberingProps( lUInt32 nodeDataIndex, ListNumberingPropsRef v );
     void resetNodeNumberingProps();
+
+    css_style_ref_t getNodeFirstLineStyle( lUInt32 nodeDataIndex );
+    void setNodeFirstLineStyle( lUInt32 nodeDataIndex, css_style_ref_t v );
+    void resetNodeFirstLineStyles();
 #endif
 
 #if BUILD_LITE!=1

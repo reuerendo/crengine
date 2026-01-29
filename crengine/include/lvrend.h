@@ -141,7 +141,8 @@ lUInt32 styleToTextFmtFlags( bool is_block, const css_style_ref_t & style, lUInt
 /// renders block as single text formatter object
 void renderFinalBlock( ldomNode * node, LFormattedText * txform, RenderRectAccessor * fmt, lUInt32 & flags,
                        int indent, int line_h, TextLangCfg * lang_cfg=NULL, int valign_dy=0, bool * is_link_start=NULL,
-                       lString32 running_bidi_ctrlchars=lString32::empty_str );
+                       lString32 running_bidi_ctrlchars=lString32::empty_str,
+                       lString32 * pending_first_letter=NULL, bool * pending_first_letter_active=NULL );
 /// renders block which contains subblocks (with enode document's rendering flags)
 int renderBlockElement( LVRendPageContext & context, ldomNode * enode, int x, int y, int width,
         int usable_left_overflow=0, int usable_right_overflow=0, int direction=REND_DIRECTION_UNSET, int * baseline=NULL );

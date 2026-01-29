@@ -139,6 +139,7 @@ enum css_decl_code {
     cssd_box_sizing,
     cssd_caption_side,
     cssd_content,
+    cssd_initial_letter,
     cssd_cr_ignore_if_dom_version_greater_or_equal,
     cssd_cr_hint,
     cssd_cr_only_if,
@@ -250,6 +251,7 @@ static const char * css_decl_name[] = {
     "box-sizing",
     "caption-side",
     "content",
+    "initial-letter",
     "-cr-ignore-if-dom-version-greater-or-equal",
     "-cr-hint",
     "-cr-only-if",
@@ -319,12 +321,16 @@ enum LVCssSelectorPseudoElement
 {
     csspe_before = 1,   // ::before
     csspe_after  = 2,   // ::after
+    csspe_first_letter = 3, // ::first-letter
+    csspe_first_line = 4, // ::first-line
 };
 
 static const char * css_pseudo_elements[] =
 {
     "before",
     "after",
+    "first-letter",
+    "first-line",
     NULL
 };
 
@@ -630,7 +636,8 @@ bool parse_number_value( const char * & str, css_length_t & value,
                                     bool accept_unspecified,
                                     bool accept_contain_cover,
                                     bool accept_cr_special,
-                                    bool is_font_size )
+                                    bool is_font_size,
+                                    bool accept_fit_content )
 {
     const char * orig_pos = str;
     value.type = css_val_unspecified;
@@ -654,6 +661,11 @@ bool parse_number_value( const char * & str, css_length_t & value,
     if ( accept_cr_special && substr_icompare( "-cr-special", str ) ) {
         value.type = css_val_unspecified;
         value.value = css_generic_cr_special;
+        return true;
+    }
+    if ( accept_fit_content && substr_icompare( "fit-content", str ) ) {
+        value.type = css_val_unspecified;
+        value.value = css_generic_fit_content;
         return true;
     }
     if ( accept_contain_cover ) {
@@ -1350,7 +1362,7 @@ bool parse_color_value( const char * & str, css_length_t & value )
         bool has_comma_separator = false;
         for ( int i=1; i<=3; i++ ) {
             css_length_t num;
-            if ( parse_number_value(str, num, true, true, false, false, false, true) ) { // accept percent, negative, unspecified
+            if ( parse_number_value(str, num, true, true, false, false, false, true, false, false, false, false) ) { // accept percent, negative, unspecified
                 // Firefox actually caps the values (-123 is considered as 0, 300 as 255)
                 int n = 0; // defaults to 0 if negative met below
                 if ( allow_unspecified && num.type == css_val_unspecified ) {
@@ -1415,7 +1427,7 @@ bool parse_color_value( const char * & str, css_length_t & value )
                 }
             }
             if ( expecting_4th_number ) {
-                if ( parse_number_value(str, num, true, true, false, false, false, true) ) {
+                if ( parse_number_value(str, num, true, true, false, false, false, true, false, false, false, false) ) {
                     int n = 0;
                     if ( num.type == css_val_unspecified ) {
                         if (num.value >= 0 ) {
@@ -1779,8 +1791,12 @@ lString32 get_applied_content_property( ldomNode * node ) {
     lString32 res;
     css_style_ref_t style = node->getStyle();
     lString32 parsed_content = style->content;
-    if ( parsed_content.empty() )
+    if ( parsed_content.empty() ) {
+        if ( node->getNodeId() == el_pseudoElem && node->hasAttribute(attr_FirstLetter) ) {
+            res = node->getAttributeValue(attr_FirstLetter);
+        }
         return res;
+    }
     int i = 0;
     int parsed_content_len = parsed_content.length();
     while ( i < parsed_content_len ) {
@@ -2280,7 +2296,7 @@ protected:
                         break;
                     }
                     css_length_t val;
-                    if ( parse_number_value(str, val, false) ) {
+                    if ( parse_number_value(str, val, false, false, false, false, false, false, false, false, false, false) ) {
                         int size = lengthToPx(doc->getRootNode(), val, 0);
                         // This CSS length has been scaled according to gRenderDPI from CSS pixels to screen pixels,
                         // so we can compare it with the viewport or screen width/height which are in screen pixels
@@ -3607,6 +3623,46 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
             case cssd_cr_apply_func:
                 n = parse_name( decl, css_cr_apply_func_names, -1 );
                 break;
+            case cssd_initial_letter:
+                // CSS Inline Layout: initial-letter: <number> <number>?
+                // We only support integer values. 0 or negative disables.
+                // When the second value (sink) is omitted, it defaults to size.
+                IF_g_SET_n_AND_break(false, 0, 0);
+                {
+                    unsigned size_u = 0;
+                    unsigned sink_u = 0;
+                    if ( !parse_integer( decl, size_u ) ) {
+                        n = -1;
+                        break;
+                    }
+                    skip_spaces( decl );
+                    if ( *decl != ';' && *decl != stop_char ) {
+                        // Try parse optional sink
+                        if ( parse_integer( decl, sink_u ) ) {
+                            // ok
+                        }
+                        else {
+                            sink_u = size_u;
+                        }
+                    }
+                    else {
+                        sink_u = size_u;
+                    }
+                    // clamp to signed 16-bit range used by style
+                    if ( size_u > 32767 ) size_u = 32767;
+                    if ( sink_u > 32767 ) sink_u = 32767;
+
+                    // Push immediately here (cssd_initial_letter is special: it stores 2 ints)
+                    buf<<(lUInt32) (prop_code | importance | parse_important(decl));
+                    buf<<(lUInt32) (lInt16)size_u;
+                    buf<<(lUInt32) (lInt16)sink_u;
+
+                    // Prevent the generic "if (n != -1)" logic below from serializing again.
+                    n = -1;
+                    // We have fully handled buffer write for this property.
+                    skip_to_next_property = false;
+                }
+                break;
             case cssd_display:
                 IF_g_SET_n_AND_break(false, css_d_inherit, css_d_inline);
                 n = parse_name( decl, css_d_names, -1 );
@@ -3736,7 +3792,7 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                         buf<<(lUInt32) len.value;
                     }
                     else {
-                        if ( parse_number_value( decl, len, true, true ) ) { // accepts a negative value
+                        if ( parse_number_value( decl, len, true, true, false, false, false, false, false, false, false, false ) ) { // accepts a negative value
                             buf<<(lUInt32) (prop_code | importance | parse_important(decl));
                             buf<<(lUInt32) len.type;
                             buf<<(lUInt32) len.value;
@@ -3889,11 +3945,6 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                     int nb_parsed = 0;
                     int nb_invalid = 0;
                     while ( *decl && *decl != ';' && *decl != stop_char ) {
-                        skip_spaces( decl );
-                        if ( *decl == ',' ) {
-                            decl++;
-                            continue;
-                        }
                         if ( substr_icompare("normal", decl) ) {
                             hb_features.clear();
                         }
@@ -3964,76 +4015,6 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                             }
                             else {
                                 nb_invalid++;
-                            }
-                        }
-                        else if ( ((*decl >= '0' && *decl <= '9') || (*decl >= 'A' && *decl <= 'Z') || (*decl >= 'a' && *decl <= 'z')) ) {
-                            // Accept bare tags without quotes (common in the wild), as long as
-                            // they are exactly 4 alphanumeric characters.
-                            const char * tag_start = decl;
-                            char tag[5];
-                            int ti = 0;
-                            while ( *decl && ti < 4 ) {
-                                char c = *decl;
-                                if ( !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) )
-                                    break;
-                                tag[ti++] = *decl++;
-                            }
-                            tag[ti] = 0;
-                            bool valid_tag = (ti == 4);
-                            // If there are more alnum chars, it's not a 4-char tag: revert and mark invalid.
-                            if ( valid_tag ) {
-                                char c = *decl;
-                                if ( (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') )
-                                    valid_tag = false;
-                            }
-                            if ( !valid_tag ) {
-                                nb_invalid++;
-                                decl = tag_start;
-                                while (*decl && *decl !=' ' && *decl !=';' && *decl!=stop_char && *decl!=',')
-                                    decl++;
-                            }
-                            else {
-                                skip_spaces( decl );
-                                int value = 1;
-                                bool have_value = false;
-                                if ( substr_icompare("on", decl) ) {
-                                    value = 1;
-                                    have_value = true;
-                                }
-                                else if ( substr_icompare("off", decl) ) {
-                                    value = 0;
-                                    have_value = true;
-                                }
-                                else {
-                                    const char * orig_pos = decl;
-                                    bool neg = false;
-                                    if ( *decl == '+' ) {
-                                        decl++;
-                                    }
-                                    else if ( *decl == '-' ) {
-                                        neg = true;
-                                        decl++;
-                                    }
-                                    int num = 0;
-                                    int nd = 0;
-                                    while ( *decl >= '0' && *decl <= '9' ) {
-                                        num = num * 10 + (*decl - '0');
-                                        decl++;
-                                        nd++;
-                                    }
-                                    if ( nd > 0 ) {
-                                        value = neg ? -num : num;
-                                        have_value = true;
-                                    }
-                                    else {
-                                        decl = orig_pos;
-                                    }
-                                }
-                                if ( !hb_features.empty() )
-                                    hb_features << ",";
-                                hb_features << tag;
-                                if ( have_value )
-                                    hb_features << "=" << lString8::itoa(value);
                             }
                         }
                         else {
@@ -4156,7 +4137,7 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                     // read length
                     css_length_t len;
                     const char * orig_pos = decl;
-                    if ( parse_number_value( decl, len, true, true ) ) { // accepts % and negative values
+                    if ( parse_number_value( decl, len, true, true, false, false, false, false, false, false, false, false ) ) { // accepts % and negative values
                         // Read optional "hanging" flag
                         // Note: "1em hanging" is not the same as "-1em"; the former shifts
                         // all other but first line by 1em to the right, while the latter
@@ -4268,12 +4249,18 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                     bool is_font_size = false;
                     if ( prop_code==cssd_font_size )
                         is_font_size = true;
+                    // fit-content accepted for width, height, min-width, min-height, max-width, max-height
+                    bool accept_fit_content = false;
+                    if ( prop_code==cssd_width || prop_code==cssd_height ||
+                            prop_code==cssd_min_width || prop_code==cssd_min_height ||
+                            prop_code==cssd_max_width || prop_code==cssd_max_height )
+                        accept_fit_content = true;
                     css_length_t len;
                     // -cr-special, only accepted with padding-left and padding-right
                     bool accept_cr_special = false;
                     if ( prop_code==cssd_padding_left || prop_code==cssd_padding_right )
                         accept_cr_special = true;
-                    if ( parse_number_value( decl, len, accept_percent, accept_negative, accept_auto, accept_none, accept_normal, accept_unspecified, false, accept_cr_special, is_font_size) ) {
+                    if ( parse_number_value( decl, len, accept_percent, accept_negative, accept_auto, accept_none, accept_normal, accept_unspecified, false, accept_cr_special, is_font_size, accept_fit_content) ) {
                         buf<<(lUInt32) (prop_code | importance | parse_important(decl));
                         buf<<(lUInt32) len.type;
                         buf<<(lUInt32) len.value;
@@ -4302,7 +4289,7 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                     css_length_t len[4];
                     int i;
                     for (i = 0; i < 4; i++) {
-                        if (parse_number_value( decl, len[i], accept_percent, accept_negative, accept_auto )) {
+                        if (parse_number_value( decl, len[i], accept_percent, accept_negative, accept_auto, false, false, false, false, false, false, false )) {
                             continue;
                         }
                         if (prop_code == cssd_border_width && parse_named_border_width( decl, len[i] )) {
@@ -4443,7 +4430,7 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                                 found_width = true;
                                 continue;
                             }
-                            if ( parse_number_value( decl, width, false ) ) { // accept_percent=false
+                            if ( parse_number_value( decl, width, false, false, false, false, false, false, false, false, false, false ) ) { // accept_percent=false
                                 found_width = true;
                                 continue;
                             }
@@ -4736,7 +4723,7 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                     int i;
                     for (i = 0; i < 2; i++) {
                         // accept percent, auto and contain/cover
-                        if ( !parse_number_value( decl, len[i], true, false, true, false, false, false, true ) )
+                        if ( !parse_number_value( decl, len[i], true, false, true, false, false, false, true, false, false, false ) )
                             break;
                     }
                     if (i) {
@@ -4765,7 +4752,7 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                     int i;
                     for (i = 0; i < 2; i++) {
                         // border-spacing doesn't accept values in %
-                        if ( !parse_number_value( decl, len[i], false ) )
+                        if ( !parse_number_value( decl, len[i], false, false, false, false, false, false, false, false, false, false ) )
                             break;
                     }
                     if (i) {
@@ -5303,6 +5290,15 @@ void LVCssDeclaration::apply( css_style_rec_t * style, const ldomNode * node ) c
         case cssd_text_transform:
             style->Apply( (css_text_transform_t) *p++, &style->text_transform, imp_bit_text_transform, is_important );
             style->flags |= STYLE_REC_FLAG_INHERITABLE_APPLIED;
+            break;
+        case cssd_initial_letter:
+            {
+                lInt16 size = (lInt16)*p++;
+                lInt16 sink = (lInt16)*p++;
+                style->Apply( size, &style->initial_letter_size, imp_bit_initial_letter_size, is_important );
+                style->Apply( sink, &style->initial_letter_sink, imp_bit_initial_letter_sink, is_important );
+                // Not inheritable
+            }
             break;
         case cssd_hyphenate:
             style->Apply( (css_hyphenate_t) *p++, &style->hyphenate, imp_bit_hyphenate, is_important );
@@ -7106,7 +7102,8 @@ void LVCssSelector::applyToPseudoElement( const ldomNode * node, css_style_rec_t
     css_style_rec_t * target_style = NULL;
     if ( node->getNodeId() == el_pseudoElem ) {
         if (    ( _pseudo_elem == csspe_before && node->hasAttribute(attr_Before) )
-             || ( _pseudo_elem == csspe_after  && node->hasAttribute(attr_After)  ) ) {
+             || ( _pseudo_elem == csspe_after  && node->hasAttribute(attr_After)  )
+             || ( _pseudo_elem == csspe_first_letter && node->hasAttribute(attr_FirstLetter) ) ) {
             target_style = style;
         }
     }
@@ -7128,6 +7125,18 @@ void LVCssSelector::applyToPseudoElement( const ldomNode * node, css_style_rec_t
                 style->pseudo_elem_after_style = new css_style_rec_t;
             }
             target_style = style->pseudo_elem_after_style;
+        }
+        else if ( _pseudo_elem == csspe_first_letter ) {
+            if ( !style->pseudo_elem_first_letter_style ) {
+                style->pseudo_elem_first_letter_style = new css_style_rec_t;
+            }
+            target_style = style->pseudo_elem_first_letter_style;
+        }
+        else if ( _pseudo_elem == csspe_first_line ) {
+            if ( !style->pseudo_elem_first_line_style ) {
+                style->pseudo_elem_first_line_style = new css_style_rec_t;
+            }
+            target_style = style->pseudo_elem_first_line_style;
         }
     }
 

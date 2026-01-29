@@ -120,6 +120,8 @@ lUInt32 calcHash(css_style_rec_t & rec)
         h = h * 31 + (lUInt32)rec.word_break;
         h = h * 31 + (lUInt32)rec.box_sizing;
         h = h * 31 + (lUInt32)rec.caption_side;
+        h = h * 31 + (lUInt32)rec.initial_letter_size;
+        h = h * 31 + (lUInt32)rec.initial_letter_sink;
         h = h * 31 + (lUInt32)rec.cr_hint.pack();
         h = h * 31 + (lUInt32)rec.font_name.getHash();
         h = h * 31 + (lUInt32)rec.background_image.getHash();
@@ -205,6 +207,8 @@ bool operator == (const css_style_rec_t & r1, const css_style_rec_t & r2)
            r1.word_break == r2.word_break&&
            r1.box_sizing == r2.box_sizing&&
            r1.caption_side == r2.caption_side&&
+           r1.initial_letter_size == r2.initial_letter_size&&
+           r1.initial_letter_sink == r2.initial_letter_sink&&
            r1.content == r2.content&&
            r1.cr_hint==r2.cr_hint;
 }

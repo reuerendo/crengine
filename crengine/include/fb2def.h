@@ -445,6 +445,7 @@ XS_ATTR2( required_namespace, "required-namespace" ) // <epub:case required-name
 XS_ATTR( T )      // to flag subtype of boxing internal elements if needed
 XS_ATTR( Before ) // for pseudoElem internal element
 XS_ATTR( After )  // for pseudoElem internal element
+XS_ATTR( FirstLetter )  // for pseudoElem internal element
 XS_ATTR( ParserHint )   // HTML parser hints (used for Lib.ru support)
 XS_ATTR( NonLinear )    // for non-linear items in EPUB
 XS_ATTR( Source )       // set on DocFragment to the path of the file in the EPUB, for info

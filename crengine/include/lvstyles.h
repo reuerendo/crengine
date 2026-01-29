@@ -94,9 +94,11 @@ enum css_style_rec_important_bit {
     imp_bit_box_sizing,
     imp_bit_caption_side,
     imp_bit_content,
+    imp_bit_initial_letter_size,
+    imp_bit_initial_letter_sink,
     imp_bit_cr_hint
 };
-#define NB_IMP_BITS 71 // The number of lines in the enum above: KEEP IT UPDATED.
+#define NB_IMP_BITS 73 // The number of lines in the enum above: KEEP IT UPDATED.
 
 #define NB_IMP_SLOTS    ((NB_IMP_BITS-1)>>5)+1
 // In lvstyles.cpp, we have hardcoded important[0] ... importance[2]
@@ -187,12 +189,16 @@ struct css_style_rec_tag {
     css_box_sizing_t       box_sizing;
     css_caption_side_t     caption_side;
     lString32              content;
+    lInt16                 initial_letter_size;
+    lInt16                 initial_letter_sink;
     css_length_t           cr_hint;
     // The following should only be used when applying stylesheets while in lvend.cpp setNodeStyle(),
     // and cleaned up there, before the style is cached and shared. They are not serialized.
     lInt8                flags; // bitmap of STYLE_REC_FLAG_*
     css_style_rec_t *    pseudo_elem_before_style;
     css_style_rec_t *    pseudo_elem_after_style;
+    css_style_rec_t *    pseudo_elem_first_letter_style;
+    css_style_rec_t *    pseudo_elem_first_line_style;
 
     css_style_rec_tag()
     : refCount(0)
@@ -247,10 +253,14 @@ struct css_style_rec_tag {
     , word_break(css_wb_inherit)
     , box_sizing(css_bs_content_box)
     , caption_side(css_cs_inherit)
+    , initial_letter_size(0)
+    , initial_letter_sink(0)
     , cr_hint(css_val_inherited, 0)
     , flags(0)
     , pseudo_elem_before_style(NULL)
     , pseudo_elem_after_style(NULL)
+    , pseudo_elem_first_letter_style(NULL)
+    , pseudo_elem_first_line_style(NULL)
     {
         // css_length_t fields are initialized by css_length_tag()
         // to (css_val_screen_px, 0)
