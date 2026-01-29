@@ -3889,6 +3889,11 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                     int nb_parsed = 0;
                     int nb_invalid = 0;
                     while ( *decl && *decl != ';' && *decl != stop_char ) {
+                        skip_spaces( decl );
+                        if ( *decl == ',' ) {
+                            decl++;
+                            continue;
+                        }
                         if ( substr_icompare("normal", decl) ) {
                             hb_features.clear();
                         }
@@ -3959,6 +3964,76 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                             }
                             else {
                                 nb_invalid++;
+                            }
+                        }
+                        else if ( ((*decl >= '0' && *decl <= '9') || (*decl >= 'A' && *decl <= 'Z') || (*decl >= 'a' && *decl <= 'z')) ) {
+                            // Accept bare tags without quotes (common in the wild), as long as
+                            // they are exactly 4 alphanumeric characters.
+                            const char * tag_start = decl;
+                            char tag[5];
+                            int ti = 0;
+                            while ( *decl && ti < 4 ) {
+                                char c = *decl;
+                                if ( !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) )
+                                    break;
+                                tag[ti++] = *decl++;
+                            }
+                            tag[ti] = 0;
+                            bool valid_tag = (ti == 4);
+                            // If there are more alnum chars, it's not a 4-char tag: revert and mark invalid.
+                            if ( valid_tag ) {
+                                char c = *decl;
+                                if ( (c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') )
+                                    valid_tag = false;
+                            }
+                            if ( !valid_tag ) {
+                                nb_invalid++;
+                                decl = tag_start;
+                                while (*decl && *decl !=' ' && *decl !=';' && *decl!=stop_char && *decl!=',')
+                                    decl++;
+                            }
+                            else {
+                                skip_spaces( decl );
+                                int value = 1;
+                                bool have_value = false;
+                                if ( substr_icompare("on", decl) ) {
+                                    value = 1;
+                                    have_value = true;
+                                }
+                                else if ( substr_icompare("off", decl) ) {
+                                    value = 0;
+                                    have_value = true;
+                                }
+                                else {
+                                    const char * orig_pos = decl;
+                                    bool neg = false;
+                                    if ( *decl == '+' ) {
+                                        decl++;
+                                    }
+                                    else if ( *decl == '-' ) {
+                                        neg = true;
+                                        decl++;
+                                    }
+                                    int num = 0;
+                                    int nd = 0;
+                                    while ( *decl >= '0' && *decl <= '9' ) {
+                                        num = num * 10 + (*decl - '0');
+                                        decl++;
+                                        nd++;
+                                    }
+                                    if ( nd > 0 ) {
+                                        value = neg ? -num : num;
+                                        have_value = true;
+                                    }
+                                    else {
+                                        decl = orig_pos;
+                                    }
+                                }
+                                if ( !hb_features.empty() )
+                                    hb_features << ",";
+                                hb_features << tag;
+                                if ( have_value )
+                                    hb_features << "=" << lString8::itoa(value);
                             }
                         }
                         else {
