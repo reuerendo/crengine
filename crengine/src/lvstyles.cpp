@@ -44,8 +44,7 @@ lUInt32 calcHash(font_ref_t & f)
 
 lUInt32 calcHash(css_style_rec_t & rec)
 {
-    if ( !rec.hash )
-    {
+    if ( !rec.hash ) {
         lUInt32 h = 0;
         h = h * 31 + (lUInt32)rec.important[0];
         h = h * 31 + (lUInt32)rec.important[1];
@@ -70,8 +69,6 @@ lUInt32 calcHash(css_style_rec_t & rec)
         h = h * 31 + (lUInt32)rec.font_style;
         h = h * 31 + (lUInt32)rec.font_weight;
         h = h * 31 + (lUInt32)rec.font_features.pack();
-        h = h * 31 + (lUInt32)rec.font_feature_settings_type;
-        h = h * 31 + (lUInt32)rec.font_feature_settings.getHash();
         h = h * 31 + (lUInt32)rec.line_height.pack();
         h = h * 31 + (lUInt32)rec.color.pack();
         h = h * 31 + (lUInt32)rec.background_color.pack();
@@ -121,6 +118,7 @@ lUInt32 calcHash(css_style_rec_t & rec)
         h = h * 31 + (lUInt32)rec.box_sizing;
         h = h * 31 + (lUInt32)rec.caption_side;
         h = h * 31 + (lUInt32)rec.cr_hint.pack();
+        h = h * 31 + (lUInt32)rec.initial_letter.pack();
         h = h * 31 + (lUInt32)rec.font_name.getHash();
         h = h * 31 + (lUInt32)rec.background_image.getHash();
         h = h * 31 + (lUInt32)rec.content.getHash();
@@ -206,7 +204,8 @@ bool operator == (const css_style_rec_t & r1, const css_style_rec_t & r2)
            r1.box_sizing == r2.box_sizing&&
            r1.caption_side == r2.caption_side&&
            r1.content == r2.content&&
-           r1.cr_hint==r2.cr_hint;
+           r1.cr_hint==r2.cr_hint &&
+           r1.initial_letter==r2.initial_letter;
 }
 
 
@@ -411,6 +410,7 @@ bool css_style_rec_t::serialize( SerialBuf & buf )
     ST_PUT_ENUM(caption_side);
     buf << content;
     ST_PUT_LEN(cr_hint);
+    ST_PUT_LEN(initial_letter);
     lUInt32 hash = calcHash(*this);
     buf << hash;
     return !buf.error();
@@ -487,6 +487,7 @@ bool css_style_rec_t::deserialize( SerialBuf & buf )
     ST_GET_ENUM(css_caption_side_t, caption_side);
     buf>>content;
     ST_GET_LEN(cr_hint);
+    ST_GET_LEN(initial_letter);
     lUInt32 hash = 0;
     buf >> hash;
     // printf("imp: %llx oldhash: %lx ", important, hash);
