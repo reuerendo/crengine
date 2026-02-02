@@ -1,27 +1,18 @@
 /*******************************************************
-
    CoolReader Engine
-
    lvstsheet.cpp:  style sheet implementation
-
    (c) Vadim Lopatin, 2000-2006
-
    This source code is distributed under the terms of
    GNU General Public License.
-
    See LICENSE file for details.
-
 *******************************************************/
-
 #include "../include/lvstsheet.h"
 #include "../include/lvtinydom.h"
 #include "../include/fb2def.h"
 #include "../include/lvstream.h"
 #include "../include/lvrend.h"   // for -cr-only-if:
-
 // define to dump all tokens
 //#define DUMP_CSS_PARSING
-
 // Helper to debug string parsing, showing current position and context
 #if 0
 static void dbg_str_pos(const char * prefix, const char * str) {
@@ -29,12 +20,10 @@ static void dbg_str_pos(const char * prefix, const char * str) {
     printf("\\%.*s\n", 20, str - 10);
 }
 #endif
-
 #define IMPORTANT_DECL_HIGHER   ((lUInt32)0x80000000U) // | to prop_code
 #define IMPORTANT_DECL_SET      ((lUInt32)0x40000000U) // | to prop_code
 #define IMPORTANT_DECL_REMOVE   ((lUInt32)0x3FFFFFFFU) // & to prop_code
 #define IMPORTANT_DECL_SHIFT    30 // >> from prop_code to get 2 bits (importance, is_important)
-
 enum css_decl_code {
     cssd_unknown,
     cssd_display,
@@ -138,13 +127,13 @@ enum css_decl_code {
     cssd_box_sizing,
     cssd_caption_side,
     cssd_content,
+    cssd_initial_letter,
     cssd_cr_ignore_if_dom_version_greater_or_equal,
     cssd_cr_hint,
     cssd_cr_only_if,
     cssd_cr_apply_func,
     cssd_stop
 };
-
 static const char * css_decl_name[] = {
     "",
     "display",
@@ -248,13 +237,13 @@ static const char * css_decl_name[] = {
     "box-sizing",
     "caption-side",
     "content",
+    "initial-letter",
     "-cr-ignore-if-dom-version-greater-or-equal",
     "-cr-hint",
     "-cr-only-if",
     "-cr-apply-func",
     NULL
 };
-
 // See https://developer.mozilla.org/en-US/docs/Web/CSS/Pseudo-classes
 enum LVCssSelectorPseudoClass
 {
@@ -290,7 +279,6 @@ enum LVCssSelectorPseudoClass
         // implement a new up>down LVCssSelector::check() which feels
         // complicated.
 };
-
 static const char * css_pseudo_classes[] =
 {
     "root",
@@ -311,7 +299,6 @@ static const char * css_pseudo_classes[] =
     "not",
     NULL
 };
-
 // https://developer.mozilla.org/en-US/docs/Web/CSS/Pseudo-elements
 enum LVCssSelectorPseudoElement
 {
@@ -319,7 +306,6 @@ enum LVCssSelectorPseudoElement
     csspe_after  = 2,   // ::after
     csspe_first_letter  = 3,   // ::first-letter
 };
-
 static const char * css_pseudo_elements[] =
 {
     "before",
@@ -327,17 +313,14 @@ static const char * css_pseudo_elements[] =
     "first-letter",
     NULL
 };
-
 inline bool css_is_alpha( char ch )
 {
     return ( (ch>='A' && ch<='Z') || ( ch>='a' && ch<='z' ) || (ch=='-') || (ch=='_') );
 }
-
 inline bool css_is_alnum( char ch )
 {
     return ( css_is_alpha(ch) || ( ch>='0' && ch<='9' ) );
 }
-
 #if 0
 static int substr_compare( const char * sub, const char * & str )
 {
@@ -357,18 +340,15 @@ static int substr_compare( const char * sub, const char * & str )
     return 0;
 }
 #endif
-
 inline char toLower( char c )
 {
     if ( c>='A' && c<='Z' )
         return c - 'A' + 'a';
     return c;
 }
-
 static int substr_icompare( const char * sub, const char * & str )
 {
     int j;
-
     // Small optimisation: don't toLower() 'sub', as all the harcoded values
     // we compare with are lowercase in this file.
     // for ( j=0; toLower(sub[j]) == toLower(str[j]) && sub[j] && str[j]; j++)
@@ -386,7 +366,6 @@ static int substr_icompare( const char * sub, const char * & str )
     }
     return 0;
 }
-
 static bool skip_spaces( const char * & str )
 {
     const char * oldpos = str;
@@ -410,7 +389,6 @@ static bool skip_spaces( const char * & str )
     }
     return *str != 0;
 }
-
 static bool parse_ident( const char * &str, char * ident, size_t maxsize, bool skip_namespace=false )
 {
     // Note: skipping any space before or after should be ensured by caller if needed
@@ -446,7 +424,6 @@ static bool parse_ident( const char * &str, char * ident, size_t maxsize, bool s
     str += i;
     return true;
 }
-
 // Used to parse id (#foo) and class names (.bar), which are user provided values
 // and allowed to contain Unicode codepoints (when parsing their values in
 // attributes in the (X)HTML, we do handle and store them as lChar32).
@@ -473,7 +450,6 @@ static bool parse_uident( const char * &str, char * ident, size_t maxsize )
     str += i;
     return true;
 }
-
 static css_decl_code parse_property_name( const char * & res )
 {
     const char * str = res;
@@ -496,7 +472,6 @@ static css_decl_code parse_property_name( const char * & res )
     }
     return cssd_unknown;
 }
-
 static int parse_name( const char * & str, const char * * names, int def_value )
 {
     for (int i=0; names[i]; i++)
@@ -509,7 +484,6 @@ static int parse_name( const char * & str, const char * * names, int def_value )
     }
     return def_value;
 }
-
 static lUInt32 parse_important( const char *str ) // does not advance the original *str
 {
     skip_spaces( str );
@@ -524,7 +498,6 @@ static lUInt32 parse_important( const char *str ) // does not advance the origin
     }
     return 0;
 }
-
 static inline bool skip_to_next( const char * & str, char stop_char_to_skip, char stop_char_no_skip, char token_sep_char=0 )
 {
     // https://www.w3.org/TR/CSS2/syndata.html#parsing-errors
@@ -595,18 +568,15 @@ static inline bool skip_to_next( const char * & str, char stop_char_to_skip, cha
     }
     return skip_spaces( str );
 }
-
 // Give more explicite names to classic usages of skip_to_next()
 static inline bool next_property( const char * & str )
 {
     return skip_to_next( str, ';', '}' );
 }
-
 static inline bool next_token( const char * & str, char stop_char='}')
 {
     return skip_to_next( str, ';', stop_char, ' ' );
 }
-
 static bool parse_integer( const char * & str, unsigned & value)
 {
     skip_spaces( str );
@@ -620,7 +590,6 @@ static bool parse_integer( const char * & str, unsigned & value)
     }
     return true;
 }
-
 bool parse_number_value( const char * & str, css_length_t & value,
                                     bool accept_percent,    // Defaults to true
                                     bool accept_negative,   // This and next ones default to false
@@ -808,7 +777,6 @@ bool parse_number_value( const char * & str, css_length_t & value,
         str = orig_pos; // revert our possible str++
         return false;
     }
-
     // The largest frac here is 999999, limited above, with a frac_div of
     // 1000000, and even scaling it by 256 it does not overflow a 32 bit
     // integer. The frac_div is a power of 10 so always divisible by 2 without
@@ -818,7 +786,6 @@ bool parse_number_value( const char * & str, css_length_t & value,
         value.value = -value.value;
     return true;
 }
-
 static bool parse_html_length( const char * & str, css_length_t & value, bool parse_as_dimension=false)
 {
     // Implement parsing of HTML attributes described in https://html.spec.whatwg.org/multipage/rendering.html
@@ -880,7 +847,6 @@ static bool parse_html_length( const char * & str, css_length_t & value, bool pa
         return false;
     return true;
 }
-
 static lString32 parse_nth_value( const lString32 value )
 {
     // https://developer.mozilla.org/en-US/docs/Web/CSS/:nth-child
@@ -968,7 +934,6 @@ static lString32 parse_nth_value( const lString32 value )
     ret << lChar32(negative) << lChar32(first) << lChar32(second);
     return ret;
 }
-
 static bool match_nth_value( const lString32 value, int n)
 {
     // Apply packed parsed value (parsed by above function) to n
@@ -987,7 +952,6 @@ static bool match_nth_value( const lString32 value, int n)
         return false;
     return n % step == 0;
 }
-
 // For some expensive LVCssSelectorRule::check() checks, that might
 // be done on a node for multiple rules and would give the same
 // result, we can cache the result in the node's RenderRectAccessor(),
@@ -1050,7 +1014,6 @@ static void cache_node_checked_property( const ldomNode * node, int property, in
             break;
     }
 }
-
 static bool get_cached_node_checked_property( const ldomNode * node, int property, int & value, bool allow_cache )
 {
     if ( !allow_cache) // (check put in here to keep calling code simpler)
@@ -1107,13 +1070,11 @@ static bool get_cached_node_checked_property( const ldomNode * node, int propert
     }
     return res;
 }
-
 struct standard_color_t
 {
     const char * name;
     lUInt32 color;
 };
-
 standard_color_t standard_color_table[] = {
     {"aliceblue",0xf0f8ff},
     {"antiquewhite",0xfaebd7},
@@ -1265,7 +1226,6 @@ standard_color_t standard_color_table[] = {
     {"yellowgreen",0x9acd32},
     {NULL, 0}
 };
-
 static int hexDigit( char c )
 {
     if ( c >= '0' && c <= '9' )
@@ -1276,7 +1236,6 @@ static int hexDigit( char c )
         return c - 'a' + 10;
     return -1;
 }
-
 bool parse_color_value( const char * & str, css_length_t & value )
 {
     const char * orig_pos = str;
@@ -1478,7 +1437,6 @@ bool parse_color_value( const char * & str, css_length_t & value )
     str = orig_pos; // revert our possible str++
     return false;
 }
-
 // Parse a CSS "content:" property into an intermediate format single string.
 bool parse_content_property( const char * & str, lString32 & parsed_content, bool & has_unsupported, char stop_char='}')
 {
@@ -1679,7 +1637,6 @@ bool parse_content_property( const char * & str, lString32 & parsed_content, boo
     str = orig_pos;
     return false;
 }
-
 /// Update a style->content, post processed for its node
 void update_style_content_property( css_style_rec_t * style, ldomNode * node ) {
     // We don't want to update too much: styles are hashed and shared by
@@ -1689,12 +1646,10 @@ void update_style_content_property( css_style_rec_t * style, ldomNode * node ) {
     // of styles to cache).
     // But we need to resolve quotes, according to their nesting level,
     // and transform them into a litteral string 's'.
-
     if ( style->content.empty() || style->content[0] != U'$' ) {
         // No update needed
         return;
     }
-
     // We need to know if this node is visible: if not, quotes nested
     // level should not be updated. We might want to still include
     // the computed quote (with quote char for level 1) for it to be
@@ -1710,7 +1665,6 @@ void update_style_content_property( css_style_rec_t * style, ldomNode * node ) {
             }
         }
     }
-
     // We do not support specifying quote chars to be used via CSS "quotes":
     //     :root { quotes: '\201c' '\201d' '\2018' '\2019'; }
     // We use the ones hardcoded for the node lang tag language (or default
@@ -1723,14 +1677,12 @@ void update_style_content_property( css_style_rec_t * style, ldomNode * node ) {
     // its own nesting level (which won't be reset when en>fr>en, though).
     // But all this is quite rare, so don't bother about it much.
     TextLangCfg * lang_cfg = TextLangMan::getTextLangCfg( node );
-
     // Note: some quote char like (U+201C / U+201D) seem to not be mirrored
     // (when using HarfBuzz) when added to some RTL arabic text. But it
     // appears that way with Firefox too!
     // But if we use another char (U+00AB / U+00BB), it gets mirrored correctly.
     // Might be that HarfBuzz first substitute it with arabic quotes (which
     // happen to look inverted), and then mirror that?
-
     lString32 res;
     lString32 parsed_content = style->content;
     lString32 quote;
@@ -1779,7 +1731,6 @@ void update_style_content_property( css_style_rec_t * style, ldomNode * node ) {
     // Replace style->content with what we built
     style->content = res;
 }
-
 /// Returns the computed value for a node from its parsed CSS "content:" value
 lString32 get_applied_content_property( ldomNode * node ) {
     lString32 res;
@@ -1848,7 +1799,6 @@ lString32 get_applied_content_property( ldomNode * node ) {
     }
     return res;
 }
-
 static void resolve_url_path( lString8 & str, lString32 codeBase ) {
     // A URL (path to local or container's file) must be resolved
     // at parsing time, as it is related to this stylesheet file
@@ -1877,7 +1827,6 @@ static void resolve_url_path( lString8 & str, lString32 codeBase ) {
     // printf("url: [%s]+%s => %s\n", UnicodeToLocal(codeBase).c_str(), str.c_str(), UnicodeToUtf8(path).c_str());
     str = UnicodeToUtf8(path);
 }
-
 enum css_atrule_keyword {
     css_atkw_and,
     css_atkw_or,
@@ -1890,7 +1839,6 @@ static const char * css_atrule_keyword_name[] = {
     "not",
     NULL
 };
-
 // Base class for AtSupportsLogicalConditionParser and AtMediaLogicalConditionParser
 class AtRuleLogicalConditionParser {
 protected:
@@ -2014,7 +1962,6 @@ public:
         }
     }
 };
-
 // https://drafts.csswg.org/css-conditional/#at-supports
 // https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@supports
 class AtSupportsLogicalConditionParser : public AtRuleLogicalConditionParser {
@@ -2124,14 +2071,12 @@ protected:
         }
     }
 };
-
 static bool check_at_supports_condition( const char * &str, lxmlDocBase * doc )
 {
     AtSupportsLogicalConditionParser parser(doc);
     parser.parse(str);
     return parser.getResult();
 }
-
 // https://developer.mozilla.org/en-US/docs/Web/CSS/Media_Queries/Using_media_queries
 // https://www.w3.org/TR/css3-mediaqueries/#media0
 enum css_atmedia_code {
@@ -2169,7 +2114,6 @@ enum css_atmedia_code {
     css_atmedia_cr_max_cre_dom_version,
     css_atmedia_unknown
 };
-
 static const char * css_atmedia_name[] = {
     // These are related to the size of the page (in CSS pixels, which may
     // not be screen pixels), excluding crengine margins. They will change
@@ -2184,7 +2128,6 @@ static const char * css_atmedia_name[] = {
     "min-aspect-ratio",
     "max-aspect-ratio",
     "orientation",
-
     // These are related to the size of the screen (in CSS pixels, which may
     // not be screen pixels)
     "device-width",
@@ -2196,12 +2139,10 @@ static const char * css_atmedia_name[] = {
     "device-aspect-ratio",
     "min-device-aspect-ratio",
     "max-device-aspect-ratio",
-
     // These are to be compared to gRenderDPI
     "resolution",
     "min-resolution",
     "max-resolution",
-
     "color",            // We don't know the buffer type when loading a document,
     "min-color",        // so we can't be accurate: we'll pretend for now we have 16M colors
     "max-color",
@@ -2211,17 +2152,14 @@ static const char * css_atmedia_name[] = {
     "update",           // "none", "Once it has been rendered, the layout can no longer be updated"
     "overflow-inline",  // "none", no horizontal scrolling
     "overflow-block",   // "paged", which is our main purpose (even if we have a scroll mode)
-
     // Private keyword (same purpose as "-cr-ignore-if-dom-version-greater-or-equal:" property)
     "-cr-max-cre-dom-version",
-
     // Not implemented:
     // "color-index",
     // "min-color-index",
     // "max-color-index",
     NULL
 };
-
 class AtMediaLogicalConditionParser : public AtRuleLogicalConditionParser {
 public:
     AtMediaLogicalConditionParser(lxmlDocBase * d, char stop_char='{')
@@ -2485,7 +2423,6 @@ protected:
         skip_to_next( str, 0, ')' );
     }
 };
-
 static bool check_at_media_condition( const char * &str, lxmlDocBase * doc, char stop_char='{' )
 {
     bool final_res = false;
@@ -2534,7 +2471,6 @@ static bool check_at_media_condition( const char * &str, lxmlDocBase * doc, char
     }
     return final_res;
 }
-
 enum css_atrule_code {
     css_at_charset,
     css_at_import,
@@ -2579,7 +2515,6 @@ enum css_atrule_code {
     css_at_viewport,
     css_at_unknown
 };
-
 static const char * css_atrule_name[] = {
     // Supported ones are marked with '// +', unsupported ones with '// -'
     // These ones are followed by some text up to ';'. No followup CSS block
@@ -2588,14 +2523,12 @@ static const char * css_atrule_name[] = {
     "namespace", // - we don't handle prefixes and namespaces, all elements and CSS selectors are/target a single global namespace
     "custom-selector", // - not supported
     "custom-media",    // - not supported
-
     // These ones are followed by some prelude and then a CSS block which is a full stylesheet
     "media",     // + media query
     "supports",  // + query for CSS property name:value support
     "scope",     // - Scoping (followup stylesheet applies only in a scope): not supported
     "document",  // - (deprecated) match url or filename
     "keyframes", // - CSS animations (not really a stylesheet, but looks like one with 'from' and 'to' selectors)
-
     // These ones may or may not have a prelude, and then a CSS block which is only a declaration (and
     // not a full stylesheet as a list of selectors+declarations) which may contain other at-rules
     // All of these are unsupported
@@ -2632,10 +2565,8 @@ static const char * css_atrule_name[] = {
     "viewport",      // - (deprecated) specifies viewport to use
     NULL
 };
-
 // Uncomment for debugging @rules processing
 // #define DEBUG_AT_RULES_PROCESSING
-
 /// Parse (or skip) @keyword rule
 static bool parse_or_skip_at_rule( const char * &str, lxmlDocBase * doc )
 {
@@ -2650,7 +2581,6 @@ static bool parse_or_skip_at_rule( const char * &str, lxmlDocBase * doc )
     str++; // skip '@'
     int name = parse_name( str, css_atrule_name, css_at_unknown);
     skip_spaces(str);
-
     // At-rules can have different followup content and kind of CSS blocks
     // See https://github.com/tabatkins/parse-css for a list
     bool skip_to_next_semi_colon = false;
@@ -2688,7 +2618,6 @@ static bool parse_or_skip_at_rule( const char * &str, lxmlDocBase * doc )
                 has_nested_stylesheet = true;
         }
     }
-
     if ( skip_to_next_semi_colon ) {
         skip_to_next( str, ';', 0);
         #ifdef DEBUG_AT_RULES_PROCESSING
@@ -2696,7 +2625,6 @@ static bool parse_or_skip_at_rule( const char * &str, lxmlDocBase * doc )
         #endif
         return true;
     }
-
     // We don't support mostly anything but @media and @supports, so skip their block
     bool process_nested_block = false;
     if ( name == css_at_media ) {
@@ -2705,12 +2633,10 @@ static bool parse_or_skip_at_rule( const char * &str, lxmlDocBase * doc )
     else if ( name == css_at_supports ) {
         process_nested_block = check_at_supports_condition( str, doc );
     }
-
     // Whether checked or not, move to next '{'
     skip_to_next( str, ';', '{' );
     if ( *str != '{' ) // not the expected block start
         return false;
-
     if ( process_nested_block ) {
         #ifdef DEBUG_AT_RULES_PROCESSING
             printf("++ %.*s\n", str-start, start);
@@ -2720,7 +2646,6 @@ static bool parse_or_skip_at_rule( const char * &str, lxmlDocBase * doc )
         // but we'll just skip it with skip_until_end_of_rule()
         return true;
     }
-
     // Skip nested block
     #ifdef DEBUG_AT_RULES_PROCESSING
         printf("-%c %.*s\n", (has_nested_stylesheet ? 's' : has_nested_declaration ? 'd' : '?'), str-start, start);
@@ -2745,14 +2670,12 @@ static bool parse_or_skip_at_rule( const char * &str, lxmlDocBase * doc )
     skip_spaces(str);
     return true;
 }
-
 // Global keyword that apply to all properties
 enum css_global_keyword {
     css_g_inherit,
     css_g_initial,
     css_g_unset,
 };
-
 static const char * css_global_keyword_names[] =
 {
     "inherit",
@@ -2760,7 +2683,6 @@ static const char * css_global_keyword_names[] =
     "unset",
     NULL
 };
-
 // The order of items in following tables should match the order in the enums in include/cssdef.h
 // (We skip parsing "inherit" and the css_xyz_inherit enum value, as "inherit" is parsed beforehand.)
 static const char * css_d_names[] = 
@@ -2786,7 +2708,6 @@ static const char * css_d_names[] =
     "none", 
     NULL
 };
-
 static const char * css_ws_names[] = 
 {
     "", // css_ws_inherit
@@ -2798,7 +2719,6 @@ static const char * css_ws_names[] =
     "break-spaces",
     NULL
 };
-
 static const char * css_ta_names[] = 
 {
     "", // css_ta_inherit
@@ -2820,7 +2740,6 @@ static const char * css_ta_names[] =
     "-cr-end-if-not-first",
     NULL
 };
-
 static const char * css_td_names[] = 
 {
     "", // css_td_inherit
@@ -2831,7 +2750,6 @@ static const char * css_td_names[] =
     "blink",
     NULL
 };
-
 static const char * css_tt_names[] =
 {
     "", // css_tt_inherit
@@ -2842,7 +2760,6 @@ static const char * css_tt_names[] =
     "full-width",
     NULL
 };
-
 // All these css_hyph_names* should map original properties in this order:
 //  1st value: inherit
 //  2nd value: no hyphenation
@@ -2876,7 +2793,6 @@ static const char * css_hyph_names3[] =
     "explicit", // this may wrong, as it's supposed to be like "hyphens: manual"
     NULL
 };
-
 static const char * css_pb_names[] =
 {
     "", // css_pb_inherit
@@ -2890,7 +2806,6 @@ static const char * css_pb_names[] =
     "verso",
     NULL
 };
-
 static const char * css_fs_names[] = 
 {
     "", // css_fs_inherit
@@ -2899,7 +2814,6 @@ static const char * css_fs_names[] =
     "oblique",
     NULL
 };
-
 static const char * css_fw_names[] = 
 {
     "", // css_fw_inherit
@@ -2931,13 +2845,11 @@ static const char * css_va_names[] =
     "text-bottom",
     NULL
 };
-
 static const char * css_ti_attribute_names[] =
 {
     "hanging",
     NULL
 };
-
 static const char * css_ff_names[] =
 {
     "inherit", // css_ff_inherit (we keep parsing this one, but will ignore it as not standalone)
@@ -2951,7 +2863,6 @@ static const char * css_ff_names[] =
     "fangsong",
     NULL
 };
-
 static const char * css_lst_names[] =
 {
     "", // css_lst_inherit
@@ -2966,7 +2877,6 @@ static const char * css_lst_names[] =
     "none",
     NULL
 };
-
 static const char * css_lsp_names[] =
 {
     "", // css_lsp_inherit
@@ -3025,7 +2935,6 @@ static const char * css_bg_position_names[]={
         "bottom", // 22
         NULL
 };
-
 //border-collpase names
 static const char * css_bc_names[]={
         "", // css_border_c_inherit
@@ -3033,7 +2942,6 @@ static const char * css_bc_names[]={
         "collapse",
         NULL
 };
-
 // orphans and widows values (supported only if in range 1-9)
 // https://drafts.csswg.org/css-break-3/#widows-orphans
 //   "Negative values and zero are invalid and must cause the declaration to be ignored."
@@ -3050,7 +2958,6 @@ static const char * css_orphans_widows_names[]={
         "9",
         NULL
 };
-
 // float value names
 static const char * css_f_names[] =
 {
@@ -3060,7 +2967,6 @@ static const char * css_f_names[] =
     "right",
     NULL
 };
-
 // clear value names
 static const char * css_c_names[] =
 {
@@ -3071,7 +2977,6 @@ static const char * css_c_names[] =
     "both",
     NULL
 };
-
 // direction value names
 static const char * css_dir_names[] =
 {
@@ -3081,7 +2986,6 @@ static const char * css_dir_names[] =
     "rtl",
     NULL
 };
-
 // visibility value names
 static const char * css_v_names[] =
 {
@@ -3091,7 +2995,6 @@ static const char * css_v_names[] =
     "collapse",
     NULL
 };
-
 // line-break value names
 static const char * css_lb_names[] =
 {
@@ -3104,7 +3007,6 @@ static const char * css_lb_names[] =
     "-cr-loose",
     NULL
 };
-
 // word-break value names
 static const char * css_wb_names[] =
 {
@@ -3115,7 +3017,6 @@ static const char * css_wb_names[] =
     "keep-all",
     NULL
 };
-
 // box-sizing value names
 static const char * css_bs_names[] =
 {
@@ -3124,7 +3025,6 @@ static const char * css_bs_names[] =
     "border-box",
     NULL
 };
-
 // caption-side value names
 static const char * css_cs_names[] =
 {
@@ -3133,7 +3033,6 @@ static const char * css_cs_names[] =
     "bottom",
     NULL
 };
-
 ///border width value names
 static const char * css_bw_names[]={
     "thin",
@@ -3163,7 +3062,6 @@ static bool parse_named_border_width( const char * & str, css_length_t & width )
     }
     return true;
 }
-
 static const char * css_cr_only_if_names[]={
         "any",
         "always",
@@ -3238,7 +3136,6 @@ enum cr_only_if_t {
     cr_only_if_line_height_normal,
     cr_only_if_not_line_height_normal,
 };
-
 static const char * css_cr_apply_func_names[]={
     "css-color-from-color-attribute",
     "css-color-from-text-attribute",
@@ -3282,9 +3179,6 @@ enum cr_apply_func_t {
     cr_apply_func_css_border_from_border_attribute,
     cr_apply_func_css_text_align_center_if_parent_text_align_initial,
 };
-
-
-
 // Handle inherit/initial/unset, as "#define..." to keep LVCssDeclaration::parse() lean.
 #define IF_g_SET_n_AND_break(default_inherited, inherit_val, initial_val) \
     if (g >= 0) { \
@@ -3335,13 +3229,11 @@ enum cr_apply_func_t {
         } \
         break; \
     }
-
 bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDocBase * doc, lString32 codeBase )
 {
     if ( !decl )
         return false;
     skip_spaces( decl );
-
     if ( !_check_if_supported ) {
         if ( *decl != '{' )
             return false;
@@ -3351,9 +3243,7 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
     // (we keep checking for ';' with @supports, but we shouldn't meet any,
     // and we return after the first declaration checked)
     char stop_char = _check_if_supported ? ')' : '}';
-
     SerialBuf buf(512, true);
-
     bool ignoring = false;
     while ( *decl && *decl != stop_char ) {
         skip_spaces( decl );
@@ -3958,7 +3848,6 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                         else if ( parse_eastasian  && substr_icompare("jis78", decl) )                      features |= LFNT_OT_FEATURES_P_JP78;
                         else if ( parse_eastasian  && substr_icompare("jis83", decl) )                      features |= LFNT_OT_FEATURES_P_JP83;
                         else if ( parse_eastasian  && substr_icompare("jis04", decl) )                      features |= LFNT_OT_FEATURES_P_JP04;
-
                         else if ( parse_important(decl) ) {
                             parsed_important = IMPORTANT_DECL_SET;
                             break; // stop looking for more
@@ -4026,7 +3915,6 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                     }
                 }
                 break;
-
             // Next ones accept 1 length value (with possibly named values for borders
             // that we map to a length)
             // Any IF_g_PUSH... not matching will fall through.
@@ -4124,7 +4012,6 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                 }
                 break;
             // Done with those that accept 1 length value.
-
             // Next ones accept 1 to 4 length values (with possibly named values for borders
             // that we map to a length)
             case cssd_border_width:
@@ -4174,7 +4061,6 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                 }
                 break;
             // Done with those that accept 1 to 4 length values.
-
             case cssd_color:
                 IF_g_PUSH_LENGTH_AND_break(1, true, css_val_color, (doc && ((ldomDocument*)doc)->isDefStyleSet() ? ((ldomDocument*)doc)->getDefaultStyle()->color.value : 0x000000));
             case cssd_background_color:
@@ -4251,7 +4137,6 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                     }
                 }
                 break;
-
             // Next ones accept a triplet (possibly incomplete) like "2px solid blue".
             // Borders don't accept length in %, and Firefox ignores the whole
             // individual declaration when that happens (with "10% dotted blue", and
@@ -4324,7 +4209,6 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                         break;
                     }
                     parsed_important = parse_important(decl);
-
                     // We expect to have at least found one of them
                     if ( found_style || found_width || found_color ) {
                         // We must set the not found properties to their default values
@@ -4395,7 +4279,6 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                 }
                 break;
             // Done with those that accepts a triplet.
-
             case cssd_background_image:
                 {
                     if ( g >= 0 ) {
@@ -4696,6 +4579,49 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                     }
                 }
                 break;
+            case cssd_initial_letter:
+                {
+                    IF_g_PUSH_LENGTH_AND_break(1, false, css_val_inherited, 0);
+                    // Minimal support: accept 'none' (or 'normal') and a number [number]
+                    // Store packed (size<<16 | sink) into css_length_t (type=css_val_unspecified)
+                    // so it can be inherited/hashed/serialized like other lengths.
+                    if ( substr_icompare("none", decl) || substr_icompare("normal", decl) ) {
+                        buf<<(lUInt32) (prop_code | importance | parse_important(decl));
+                        buf<<(lUInt32) css_val_unspecified;
+                        buf<<(lUInt32) 0;
+                        break;
+                    }
+                    css_length_t num;
+                    if ( !parse_number_value(decl, num, false, false, false, false, false, true) ) {
+                        break;
+                    }
+                    int size = 0;
+                    if ( num.type == css_val_unspecified ) {
+                        if (num.value > 0)
+                            size = num.value;
+                    }
+                    if ( size <= 0 ) {
+                        break;
+                    }
+                    skip_spaces(decl);
+                    int sink = size;
+                    const char * save_pos = decl;
+                    if ( parse_number_value(decl, num, false, false, false, false, false, true) ) {
+                        int n2 = 0;
+                        if ( num.type == css_val_unspecified && num.value > 0 )
+                            n2 = num.value;
+                        if ( n2 > 0 )
+                            sink = n2;
+                    }
+                    else {
+                        decl = save_pos;
+                    }
+                    int packed = (size << 16) | (sink & 0xFFFF);
+                    buf<<(lUInt32) (prop_code | importance | parse_important(decl));
+                    buf<<(lUInt32) css_val_unspecified;
+                    buf<<(lUInt32) packed;
+                }
+                break;
             case cssd_stop:
             case cssd_unknown:
             default:
@@ -4744,7 +4670,6 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
             next_property( decl );
         }
     }
-
     // store parsed result
     if (buf.pos()) {
         buf<<(lUInt32) cssd_stop; // add end marker
@@ -4757,7 +4682,6 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
         //   for (int i=0; i<sz; i++)
         //      buf >> _data[i];
     }
-
     // skip '}' (we don't check stop_char, as with @supports (),
     // we shouldn't see any - and we must have returned above)
     skip_spaces( decl );
@@ -4767,7 +4691,6 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
     }
     return false;
 }
-
 static void apply_cr_apply_func( cr_apply_func_t apply_func, css_style_rec_t * style, const ldomNode * node, lUInt8 is_important=0) {
     // Quotes from the specs https://html.spec.whatwg.org/multipage/rendering.html
     switch (apply_func) {
@@ -5103,7 +5026,6 @@ static void apply_cr_apply_func( cr_apply_func_t apply_func, css_style_rec_t * s
         break;
     }
 }
-
 static css_length_t read_length( int * &data )
 {
     css_length_t len;
@@ -5111,7 +5033,6 @@ static css_length_t read_length( int * &data )
     len.value = (*data++);
     return len;
 }
-
 void LVCssDeclaration::apply( css_style_rec_t * style, const ldomNode * node ) const
 {
     if (!_data)
@@ -5369,6 +5290,13 @@ void LVCssDeclaration::apply( css_style_rec_t * style, const ldomNode * node ) c
         case cssd_border_collapse:
             style->Apply( (css_border_collapse_value_t) *p++, &style->border_collapse, imp_bit_border_collapse, is_important );
             break;
+        case cssd_initial_letter:
+            {
+                css_value_type_t t = (css_value_type_t) *p++;
+                int v = *p++;
+                style->Apply( css_length_t(t, v), &style->initial_letter, imp_bit_initial_letter, is_important );
+            }
+            break;
         case cssd_orphans:
             style->Apply( (css_orphans_widows_value_t) *p++, &style->orphans, imp_bit_orphans, is_important );
             style->flags |= STYLE_REC_FLAG_INHERITABLE_APPLIED;
@@ -5543,7 +5471,6 @@ void LVCssDeclaration::apply( css_style_rec_t * style, const ldomNode * node ) c
         }
     }
 }
-
 lUInt32 LVCssDeclaration::getHash() const {
     if (!_data)
         return 0;
@@ -5553,7 +5480,6 @@ lUInt32 LVCssDeclaration::getHash() const {
         hash = hash * 31 + *p;
     return hash;
 }
-
 // We are storing specificity/weight in a lUInt32.
 // We also want to include in it the order in which we have
 // seen/parsed the selectors, so we store in the lower bits
@@ -5568,15 +5494,11 @@ lUInt32 LVCssDeclaration::getHash() const {
 #define WEIGHT_SPECIFICITY_ATTRCLS  1<<24 // allow for 32 .class and [attr...] (c)
 #define WEIGHT_SPECIFICITY_ELEMENT  1<<19 // allow for 32 element names div > p span (d)
 #define WEIGHT_SELECTOR_ORDER       1     // allow for counting 524288 selectors
-
 lUInt32 LVCssSelectorRule::getWeight() const {
     /* Each LVCssSelectorRule will add its own weight to
        its LVCssSelector container specifity.
-
     Following https://www.w3.org/TR/CSS2/cascade.html#specificity
-
     A selector's specificity is calculated as follows:
-
     - count 1 if the declaration is from is a 'style' attribute rather
     than a rule with a selector, 0 otherwise (= a) (In HTML, values
     of an element's "style" attribute are style sheet rules. These
@@ -5586,13 +5508,11 @@ lUInt32 LVCssSelectorRule::getWeight() const {
     selector (= c) => 1 << 8
     - count the number of element names and pseudo-elements in the
     selector (= d) => 1
-
     The specificity is based only on the form of the selector. In
     particular, a selector of the form "[id=p33]" is counted as an
     attribute selector (a=0, b=0, c=1, d=0), even if the id attribute is
     defined as an "ID" in the source document's DTD.
     */
-
     // declaration from a style="" attribute (a) are always applied last,
     // and don't have a selector here.
     // LVCssSelector._specificity will be added 1 by LVCssSelector when it
@@ -5653,7 +5573,6 @@ lUInt32 LVCssSelectorRule::getWeight() const {
     }
     return 0;
 }
-
 bool LVCssSelectorRule::checkInnerText( const ldomNode * & node ) const {
     // Non per-specs CSS, using the same syntax as attribute selectors, with "_" as
     // the attribute name, to match against the node full inner text.
@@ -5779,7 +5698,6 @@ bool LVCssSelectorRule::checkInnerText( const ldomNode * & node ) const {
     }
     return false;
 }
-
 bool LVCssSelectorRule::quickClassCheck(const lUInt32 *classHashes, size_t size) const {
     if (_type != cssrt_class)
         return true;
@@ -5789,7 +5707,6 @@ bool LVCssSelectorRule::quickClassCheck(const lUInt32 *classHashes, size_t size)
     }
     return false;
 }
-
 bool LVCssSelectorRule::check( const ldomNode * & node, bool allow_cache ) const
 {
     if (!node || node->isNull() || node->isRoot())
@@ -5802,7 +5719,6 @@ bool LVCssSelectorRule::check( const ldomNode * & node, bool allow_cache ) const
     // or be updated to the node on which next selectors (on the left in the
     // chain) must be checked against. When returning 'false', we can let
     // node be in any state, even messy.
-
     // We allow internal/boxing elements element names in selectors,
     // so if one is specified, we should not skip it with getUnboxed*().
     // We expect to find only a single kind of them per selector though.
@@ -6295,7 +6211,6 @@ bool LVCssSelectorRule::check( const ldomNode * & node, bool allow_cache ) const
     }
     return true;
 }
-
 bool LVCssSelectorRule::checkNextRules( const ldomNode * node, bool allow_cache ) const
 {
     // Similar to LVCssSelector::check() just below, but
@@ -6313,7 +6228,6 @@ bool LVCssSelectorRule::checkNextRules( const ldomNode * node, bool allow_cache 
     } while (rule!=NULL);
     return true;
 }
-
 bool LVCssSelector::check( const ldomNode * node, bool allow_cache ) const
 {
     lUInt16 nodeId = node->getNodeId();
@@ -6380,12 +6294,10 @@ bool LVCssSelector::check( const ldomNode * node, bool allow_cache ) const
     } while (rule!=NULL);
     return true;
 }
-
 bool LVCssSelector::quickClassCheck(const lUInt32 *classHashes, size_t size) const {
     // pseudo_elem: `LVCssSelector::check()` may move the check to its parent node
     return !_rules || _pseudo_elem || _rules->quickClassCheck(classHashes, size);
 }
-
 bool parse_attr_value( const char * &str, char * buf, bool &parse_trailing_i, char stop_char=']' )
 {
     int pos = 0;
@@ -6447,13 +6359,11 @@ bool parse_attr_value( const char * &str, char * buf, bool &parse_trailing_i, ch
         return true;
     }
 }
-
 bool parse_attr_value( const char * &str, char * buf, char stop_char=']' )
 {
     bool parse_trailing_i = false;
     return parse_attr_value( str, buf, parse_trailing_i, stop_char );
 }
-
 LVCssSelectorRule * parse_attr( const char * &str, lxmlDocBase * doc, bool useragent_sheet )
 {
     // We should not skip_spaces() here: it's invalid just after one of '.#:'
@@ -6692,7 +6602,6 @@ LVCssSelectorRule * parse_attr( const char * &str, lxmlDocBase * doc, bool usera
     rule->setAttr(id, s);
     return rule;
 }
-
 static void insertRule(LVCssSelectorRule * rule, LVCssSelectorRule * & start, LVCssSelectorRule * & anchor, bool anchorable) {
     if ( !start ) {
         start = rule;
@@ -6727,7 +6636,6 @@ static void insertRule(LVCssSelectorRule * rule, LVCssSelectorRule * & start, LV
         }
     }
 }
-
 bool LVCssSelector::parse( const char * &str, lxmlDocBase * doc, bool useragent_sheet, bool for_functional_pseudo_class )
 {
     if (!str || !*str)
@@ -6860,7 +6768,6 @@ bool LVCssSelector::parse( const char * &str, lxmlDocBase * doc, bool useragent_
                 }
                 insertRule( rule, start, anchor, true );
                 _specificity += rule->getWeight();
-
                 /*
                 if ( _id!=0 ) {
                     LVCssSelectorRule * rule = new LVCssSelectorRule(cssrt_parent);
@@ -6869,11 +6776,9 @@ bool LVCssSelector::parse( const char * &str, lxmlDocBase * doc, bool useragent_
                     _id=0;
                 }
                 */
-
                 // We should not skip spaces here: combining multiple classnames or
                 // attributes is to be done only when there is no space in between
                 // them. Otherwise, it's a descendant combinator (cssrt_ancessor).
-
                 attr_rule = true;
                 //continue;
             }
@@ -6938,7 +6843,6 @@ exit:
     _rules = start;
     return res;
 }
-
 static bool skip_until_end_of_rule( const char * &str )
 {
     while ( *str && *str!='}' )
@@ -6947,7 +6851,6 @@ static bool skip_until_end_of_rule( const char * &str )
         str++;
     return *str != 0;
 }
-
 void LVCssSelector::applyToPseudoElement( const ldomNode * node, css_style_rec_t * style ) const
 {
     // This might be called both on the node that match the selector (we should
@@ -6987,7 +6890,6 @@ void LVCssSelector::applyToPseudoElement( const ldomNode * node, css_style_rec_t
             target_style = style->pseudo_elem_first_letter_catcher_style;
         }
     }
-
     if ( target_style ) {
         if ( !(target_style->flags & STYLE_REC_FLAG_MATCHED ) ) {
             // pseudoElem starts with "display: none" (in case they were created and
@@ -7003,7 +6905,6 @@ void LVCssSelector::applyToPseudoElement( const ldomNode * node, css_style_rec_t
     }
     return;
 }
-
 LVCssSelectorRule::LVCssSelectorRule( LVCssSelectorRule & v )
 : _type(v._type), _id(v._id), _attrid(v._attrid)
 , _next(NULL)
@@ -7014,7 +6915,6 @@ LVCssSelectorRule::LVCssSelectorRule( LVCssSelectorRule & v )
     if ( v._next )
         _next = new LVCssSelectorRule( *v._next );
 }
-
 LVCssSelector::LVCssSelector( LVCssSelector & v )
 : _id(v._id)
 , _is_presentational_hint(v._is_presentational_hint)
@@ -7027,7 +6927,6 @@ LVCssSelector::LVCssSelector( LVCssSelector & v )
     if ( v._next )
         _next = new LVCssSelector( *v._next );
 }
-
 void LVStyleSheet::set(LVPtrVector<LVCssSelector> & v  )
 {
     _selectors.clear();
@@ -7042,7 +6941,6 @@ void LVStyleSheet::set(LVPtrVector<LVCssSelector> & v  )
             _selectors.add( NULL );
     }
 }
-
 LVStyleSheet::LVStyleSheet( LVStyleSheet & sheet )
 :   _doc( sheet._doc )
 ,   _nested( sheet._nested )
@@ -7050,7 +6948,6 @@ LVStyleSheet::LVStyleSheet( LVStyleSheet & sheet )
     set( sheet._selectors );
     _selector_count = sheet._selector_count;
 }
-
 template<typename F>
 static void for_each_split(const lChar32 *begin, F functor) {
     const lChar32 *end = begin;
@@ -7065,7 +6962,6 @@ static void for_each_split(const lChar32 *begin, F functor) {
     if (end > begin)
         functor(begin, end);
 }
-
 void LVStyleSheet::apply( const ldomNode * node, css_style_rec_t * style ) const
 {
     if (!_selectors.length())
@@ -7113,13 +7009,11 @@ void LVStyleSheet::apply( const ldomNode * node, css_style_rec_t * style ) const
     // checking and applying them in the order of specificity/parsed position.
     LVCssSelector * selector_0 = _selectors[0];
     LVCssSelector * selector_id = id>0 && id<_selectors.length() ? _selectors[id] : NULL;
-
     LVArray<lUInt32> class_hash_array;
     const lString32 &v = node->getAttributeValue(attr_class);
     for_each_split(v.c_str(), [&](const lChar32 *begin, const lChar32 *end) {
         class_hash_array.add(lString32::getHash(begin, end));
     });
-
     for (;;)
     {
         if (selector_0!=NULL)
@@ -7152,7 +7046,6 @@ void LVStyleSheet::apply( const ldomNode * node, css_style_rec_t * style ) const
         }
     }
 }
-
 lUInt32 LVCssSelectorRule::getHash() const
 {
     lUInt32 hash = 0;
@@ -7164,12 +7057,10 @@ lUInt32 LVCssSelectorRule::getHash() const
         hash = hash * 31 + _subSelectors->getHash();
     return hash;
 }
-
 lUInt32 LVCssSelector::getHash() const
 {
     lUInt32 hash = 0;
     lUInt32 nextHash = 0;
-
     if (_next)
         nextHash = _next->getHash();
     for (const LVCssSelectorRule * p = _rules.get(); p; p = p->getNext()) {
@@ -7184,7 +7075,6 @@ lUInt32 LVCssSelector::getHash() const
         hash = hash * 31 + _decl->getHash();
     return hash;
 }
-
 /// calculate hash
 lUInt32 LVStyleSheet::getHash() const
 {
@@ -7195,7 +7085,6 @@ lUInt32 LVStyleSheet::getHash() const
     }
     return hash;
 }
-
 // insert with specificity sorting
 static void insert_into_selectors(LVCssSelector *item, LVPtrVector<LVCssSelector> &selectors) {
     lUInt16 id = item->getElementNameId();
@@ -7219,7 +7108,6 @@ static void insert_into_selectors(LVCssSelector *item, LVPtrVector<LVCssSelector
     else
         selectors[id] = item;
 }
-
 bool LVStyleSheet::parseAndAdvance( const char * &str, bool useragent_sheet, lString32 codeBase )
 {
     if ( !_doc ) {
@@ -7315,7 +7203,6 @@ bool LVStyleSheet::parseAndAdvance( const char * &str, bool useragent_sheet, lSt
     }
     return _selectors.length() > 0;
 }
-
 /// Gather snippets in the provided CSS that the provided node would match
 bool LVStyleSheet::gatherNodeMatchingRulesets(ldomNode * node, const char * str, bool useragent_sheet, lString8Collection & matches) const {
     // Parsing as in parseAndAdvance() but simplified as we don't need to build anything
@@ -7390,7 +7277,6 @@ bool LVStyleSheet::gatherNodeMatchingRulesets(ldomNode * node, const char * str,
     }
     return ret;
 }
-
 void LVStyleSheet::merge(const LVStyleSheet &other) {
     int length = other._selectors.length();
     if (length > _selectors.length())
@@ -7417,7 +7303,6 @@ void LVStyleSheet::merge(const LVStyleSheet &other) {
     }
     _selector_count += other._selector_count;
 }
-
 /// extract @import filename from beginning of CSS
 bool LVProcessStyleSheetImport( const char * &str, lString8 & import_file, lxmlDocBase * doc )
 {
@@ -7474,7 +7359,6 @@ bool LVProcessStyleSheetImport( const char * &str, lString8 & import_file, lxmlD
         p++;
     }
     skip_spaces( p );
-
     if ( *p!=';' ) {
         // A media query is allowed before the ';', and ends with the ';'
         bool ok = check_at_media_condition( p, doc , ';');
@@ -7495,7 +7379,6 @@ bool LVProcessStyleSheetImport( const char * &str, lString8 & import_file, lxmlD
         }
     }
     skip_spaces( p );
-
     // Remove trailing ';' at end of "@import url(..);"
     if ( *p==';' )
         p++;
@@ -7504,7 +7387,6 @@ bool LVProcessStyleSheetImport( const char * &str, lString8 & import_file, lxmlD
     str = p;
     return true;
 }
-
 /// load stylesheet from file, with processing of first @import only
 bool LVLoadStylesheetFile( lString32 pathName, lString8 & css )
 {

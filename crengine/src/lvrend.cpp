@@ -4630,6 +4630,7 @@ void copystyle( css_style_ref_t source, css_style_ref_t dest )
     dest->content = source->content ;
     dest->cr_hint.type = source->cr_hint.type ;
     dest->cr_hint.value = source->cr_hint.value ;
+    dest->initial_letter = source->initial_letter;
 }
 
 // Only used by renderBlockElementLegacy()
@@ -10766,6 +10767,158 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
             // file path... So these won't work when defined in a style= attribute.
             if ( decl.parse( s, false, doc ) ) {
                 decl.apply( pstyle );
+            }
+        }
+    }
+
+    // initial-letter on ::first-letter
+    // We only support it on the actual pseudo element node (el_pseudoElem with attr_FirstLetter).
+    // Render it like a drop-cap: float:left, with auto font-size based on the parent line height,
+    // and apply sink by shifting it down via margin-top.
+    if ( nodeElementId == el_pseudoElem && enode->hasAttribute(attr_FirstLetter) ) {
+        if ( pstyle->initial_letter.type == css_val_unspecified && pstyle->initial_letter.value != 0 ) {
+            int size_fp = (pstyle->initial_letter.value >> 16) & 0xFFFF; // 8.8 fixed-point number of lines
+            int sink = pstyle->initial_letter.value & 0xFFFF; // integer number of lines
+            if ( size_fp > 0 ) {
+                if ( sink <= 0 )
+                    sink = (size_fp + 0xFF) >> 8;
+
+                // Get parent (containing block) metrics
+                ldomNode * parent = enode->getUnboxedParent();
+                if ( parent && !parent_style.isNull() ) {
+                    LVFontRef pf = parent->getFont();
+                    int base_font_size = lengthToPx(parent, parent_style->font_size, 0, 0);
+                    if ( base_font_size < 1 )
+                        base_font_size = 1;
+
+                    // Use computed CSS line-height when available.
+                    // Match main text rendering behavior, including KOReader interline scaling.
+                    int line_height_px = -1;
+                    if ( parent_style->line_height.type == css_val_unspecified &&
+                                parent_style->line_height.value == css_generic_normal ) {
+                        if ( !pf.isNull() )
+                            line_height_px = pf->getHeight(); // line-height: normal
+                        // Scale line-height according to document's _interlineScaleFactor
+                        // (this is also applied to 'normal' in main text rendering).
+                        int interline_scale_factor = doc->getInterlineScaleFactor();
+                        if ( interline_scale_factor != INTERLINE_SCALE_FACTOR_NO_SCALE ) {
+                            line_height_px = (line_height_px * interline_scale_factor) >> INTERLINE_SCALE_FACTOR_SHIFT;
+                        }
+                    }
+                    else {
+                        line_height_px = lengthToPx(parent, parent_style->line_height,
+                                                base_font_size, base_font_size, true);
+                        // Scale line-height according to document's _interlineScaleFactor, but
+                        // not if it was already in screen_px (already scaled when inherited).
+                        int interline_scale_factor = doc->getInterlineScaleFactor();
+                        if ( parent_style->line_height.type != css_val_screen_px &&
+                                    interline_scale_factor != INTERLINE_SCALE_FACTOR_NO_SCALE ) {
+                            line_height_px = (line_height_px * interline_scale_factor) >> INTERLINE_SCALE_FACTOR_SHIFT;
+                        }
+                    }
+                    if ( line_height_px < 1 ) {
+                        if ( !pf.isNull() )
+                            line_height_px = pf->getHeight();
+                    }
+                    if ( line_height_px < 1 )
+                        line_height_px = base_font_size;
+
+                    // --- Correct target height: (n-1) full lines + cap-height of first line ---
+                    int target_height_px = 0;
+                    int base_size = 0;
+                    int base_baseline = 0;
+                    int base_cap_height = 0;
+                    if ( !pf.isNull() ) {
+                        base_size = pf->getSize();
+                        base_baseline = pf->getBaseline();
+                        LVFont::glyph_info_t gi;
+                        // Cap-height from 'H'
+                        if ( base_size > 0 && pf->getGlyphInfo((lUInt32)(lChar32)'H', &gi) ) {
+                            base_cap_height = gi.originY; // baseline -> top of glyph bbox
+                        }
+                        if ( base_cap_height <= 0 ) {
+                            // Fallback: use baseline as an approximation.
+                            base_cap_height = base_baseline;
+                        }
+                    }
+
+                    // n is fixed-point number of lines.
+                    // target_height = (n-1)*line_height + base_cap_height
+                    // (keep precision with 8.8 arithmetic)
+                    int n_minus_1_fp = size_fp - 256;
+                    target_height_px = ( (n_minus_1_fp * line_height_px) + (base_cap_height << 8) ) >> 8;
+                    if ( target_height_px < 1 )
+                        target_height_px = 1;
+
+                    // Scale font-size so that cap-height (baseline->cap) ~= target_height_px.
+                    int target_font_px = target_height_px;
+                    if ( base_cap_height > 0 && base_size > 0 ) {
+                        target_font_px =
+                            (target_height_px * base_size + base_cap_height/2)
+                            / base_cap_height;
+                    }
+                    if ( target_font_px < 1 )
+                        target_font_px = 1;
+
+                    // Ensure float behavior
+                    pstyle->float_ = css_f_left;
+
+                    // Used font-size for the initial letter
+                    pstyle->font_size.type = css_val_screen_px;
+                    pstyle->font_size.value = target_font_px;
+
+                    // Ensure its own line-height won't be smaller than its font height
+                    LVFontRef drop_font = getFont(enode, pstyle, doc->getDocIndex());
+                    int drop_line_height_px = line_height_px;
+                    if ( !drop_font.isNull() ) {
+                        int dh = drop_font->getHeight();
+                        if ( dh > drop_line_height_px )
+                            drop_line_height_px = dh;
+                    }
+                    pstyle->line_height.type = css_val_screen_px;
+                    pstyle->line_height.value = drop_line_height_px;
+
+                    // Avoid extra empty space below the drop cap due to font descent.
+                    // Float box height will include descent, while sizing is based on baseline->cap-height.
+                    // Compensate with a negative margin-bottom.
+                    if ( !pf.isNull() ) {
+                        int pf_height = pf->getHeight();
+                        int pf_baseline = pf->getBaseline();
+                        int pf_size = pf->getSize();
+                        int base_descent = pf_height - pf_baseline;
+                        if ( base_descent > 0 && pf_size > 0 ) {
+                            int descent_px = (target_font_px * base_descent + pf_size/2) / pf_size;
+                            if ( descent_px > 0 ) {
+                                // margin[3] is margin-bottom
+                                pstyle->margin[3].type = css_val_screen_px;
+                                pstyle->margin[3].value = -descent_px;
+                            }
+                        }
+                    }
+
+                    // Baseline alignment: align dropcap baseline with the baseline of line 'sink'.
+                    // (sink==1 => raised initial, sink==ceil(size) => dropped initial)
+                    int margin_top_px = 0;
+                    if ( !pf.isNull() && !drop_font.isNull() ) {
+                        int n_ceil = (size_fp + 0xFF) >> 8;
+                        if ( sink < 1 )
+                            sink = 1;
+                        else if ( sink > n_ceil )
+                            sink = n_ceil;
+
+                        // baseline = fontBaseline + (lineHeight - fontHeight)/2
+                        int parent_half_leading = (line_height_px - pf->getHeight()) / 2;
+                        int target_baseline = (sink - 1) * line_height_px + pf->getBaseline() + parent_half_leading;
+                        int drop_half_leading = (drop_line_height_px - drop_font->getHeight()) / 2;
+                        int drop_baseline = drop_font->getBaseline() + drop_half_leading;
+                        margin_top_px = target_baseline - drop_baseline;
+                    }
+                    if ( margin_top_px != 0 ) {
+                        // margin[2] is margin-top
+                        pstyle->margin[2].type = css_val_screen_px;
+                        pstyle->margin[2].value = margin_top_px;
+                    }
+                }
             }
         }
     }
