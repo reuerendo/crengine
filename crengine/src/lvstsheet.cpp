@@ -318,6 +318,7 @@ enum LVCssSelectorPseudoElement
     csspe_before = 1,   // ::before
     csspe_after  = 2,   // ::after
     csspe_first_letter  = 3,   // ::first-letter
+    csspe_first_line = 4, // ::first-line
 };
 
 static const char * css_pseudo_elements[] =
@@ -325,6 +326,7 @@ static const char * css_pseudo_elements[] =
     "before",
     "after",
     "first-letter",
+    "first-line",
     NULL
 };
 
@@ -6074,7 +6076,7 @@ bool LVCssSelectorRule::check( const ldomNode * & node, bool allow_cache ) const
         return true; // should it be: return !node->isBoxingNode(); ?
     case cssrt_pseudoclass:   // E:pseudo-class
         {
-            int nodeId;
+            int nodeId = 0;
             switch (_attrid) {
                 case csspc_root:
                 {
@@ -6985,6 +6987,12 @@ void LVCssSelector::applyToPseudoElement( const ldomNode * node, css_style_rec_t
                 style->pseudo_elem_first_letter_catcher_style = new css_style_rec_t;
             }
             target_style = style->pseudo_elem_first_letter_catcher_style;
+        }
+        else if ( _pseudo_elem == csspe_first_line ) {
+            if ( !style->pseudo_elem_first_line_style ) {
+                style->pseudo_elem_first_line_style = new css_style_rec_t;
+            }
+            target_style = style->pseudo_elem_first_line_style;
         }
     }
 
