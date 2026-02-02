@@ -48,8 +48,8 @@ void testFormatting()
             );
         }
     };
-    LVFontRef font1 = fontMan->GetFont(20, 300, false, css_ff_sans_serif, lString8("Arial") );
-    LVFontRef font2 = fontMan->GetFont(20, 300, false, css_ff_serif, lString8("Times New Roman") );
+    LVFontRef font1 = fontMan->GetFont(20, 300, false, css_ff_sans_serif, lString8("Arial"), 0, lString8::empty_str );
+    LVFontRef font2 = fontMan->GetFont(20, 300, false, css_ff_serif, lString8("Times New Roman"), 0, lString8::empty_str );
     Tester t;
     t.addLine( U"Testing simple paragraph formatting. Just a test. ", LTEXT_ALIGN_WIDTH|LTEXT_FLAG_OWNTEXT, font1 );
     t.addLine( U"Another fragment of text. ", LTEXT_FLAG_OWNTEXT, font1 );

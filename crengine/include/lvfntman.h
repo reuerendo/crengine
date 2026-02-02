@@ -512,6 +512,11 @@ public:
     /// set OpenType features (bitmap)
     virtual void setFeatures( int features ) { }
 
+    /// get OpenType features specified via CSS font-feature-settings
+    virtual lString8 getFeatureSettings() const { return lString8::empty_str; }
+    /// set OpenType features specified via CSS font-feature-settings
+    virtual void setFeatureSettings( const lString8 & feature_settings ) { CR_UNUSED(feature_settings); }
+
     /// sets current kerning mode
     virtual void setKerningMode( kerning_mode_t /*mode*/ ) { }
     /// returns current kerning mode
@@ -613,7 +618,7 @@ public:
     virtual void gc() = 0;
     /// returns most similar font
     virtual LVFontRef GetFont(int size, int weight, bool italic, css_font_family_t family, lString8 typeface,
-                                int features=0, int documentId = -1, bool useBias=false) = 0;
+                                int features=0, lString8 feature_settings=lString8::empty_str, int documentId = -1, bool useBias=false) = 0;
 
     /// return available font weight values
     virtual void GetAvailableFontWeights(LVArray<int>& weights, lString8 typeface) = 0;
