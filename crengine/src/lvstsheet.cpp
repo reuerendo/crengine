@@ -772,6 +772,10 @@ bool parse_number_value( const char * & str, css_length_t & value,
         value.type = css_val_ch;
     else if ( substr_icompare( "rem", str ) )
         value.type = css_val_rem;
+    else if ( substr_icompare( "lh", str ) )
+        value.type = css_val_lh;
+    else if ( substr_icompare( "rlh", str ) )
+        value.type = css_val_rlh;
     else if ( substr_icompare( "px", str ) )
         value.type = css_val_px;
     else if ( substr_icompare( "in", str ) )

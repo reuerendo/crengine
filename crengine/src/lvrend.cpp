@@ -2609,6 +2609,50 @@ int lengthToPx( ldomNode * node, css_length_t val, int base_px, int base_em, boo
         px = (node->getDocument()->getDefaultFont()->getSize() * val.value) >> 8;
         break;
 
+    case css_val_lh: { // value = lh*256 (line-height of the current element)
+        // Beware of cyclic dependencies if lh is used to compute line-height itself.
+        // We use a simple recursion guard: if we're already resolving a lh, fallback
+        // to the normal line-height for the current font.
+        static bool resolving_lh = false;
+        if (resolving_lh) {
+            int lh = node->getFont()->getHeight();
+            int interline_scale_factor = node->getDocument()->getInterlineScaleFactor();
+            if (interline_scale_factor != INTERLINE_SCALE_FACTOR_NO_SCALE)
+                lh = (lh * interline_scale_factor) >> INTERLINE_SCALE_FACTOR_SHIFT;
+            px = (lh * val.value) >> 8;
+            break;
+        }
+        resolving_lh = true;
+        int lh;
+        css_style_ref_t style = node->getStyle();
+        if (!style.isNull() && style->line_height.type == css_val_unspecified && style->line_height.value == css_generic_normal) {
+            lh = node->getFont()->getHeight();
+        }
+        else if (!style.isNull()) {
+            int em = node->getFont()->getSize();
+            lh = lengthToPx(node, style->line_height, em, em, true);
+        }
+        else {
+            lh = node->getFont()->getHeight();
+        }
+        int interline_scale_factor = node->getDocument()->getInterlineScaleFactor();
+        if (interline_scale_factor != INTERLINE_SCALE_FACTOR_NO_SCALE)
+            lh = (lh * interline_scale_factor) >> INTERLINE_SCALE_FACTOR_SHIFT;
+        px = (lh * val.value) >> 8;
+        resolving_lh = false;
+        break;
+    }
+
+    case css_val_rlh: { // value = rlh*256 (line-height of the root element)
+        LVFontRef def_font = node->getDocument()->getDefaultFont();
+        int rlh = def_font.isNull() ? node->getFont()->getHeight() : def_font->getHeight();
+        int interline_scale_factor = node->getDocument()->getInterlineScaleFactor();
+        if (interline_scale_factor != INTERLINE_SCALE_FACTOR_NO_SCALE)
+            rlh = (rlh * interline_scale_factor) >> INTERLINE_SCALE_FACTOR_SHIFT;
+        px = (rlh * val.value) >> 8;
+        break;
+    }
+
     /* absolute value, less often used - value = unit*256 */
     /* (previously treated by crengine as 0, which we still do if gRenderDPI=0) */
     case css_val_in: // 2.54 cm   1in = 96px
@@ -2669,6 +2713,7 @@ bool is_length_relative_unit(css_length_t val)
 {
     return (val.type == css_val_percent || val.type == css_val_em ||
             val.type == css_val_ex || val.type == css_val_ch || val.type == css_val_rem ||
+            val.type == css_val_lh || val.type == css_val_rlh ||
             val.type == css_val_vw || val.type == css_val_vh ||
             val.type == css_val_vmin || val.type == css_val_vmax);
 }
