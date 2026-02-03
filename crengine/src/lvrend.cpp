@@ -2663,7 +2663,11 @@ int lengthToPx( ldomNode * node, css_length_t val, int base_px, int base_em, boo
         int rlh;
         css_style_ref_t def_style = doc->getDefaultStyle();
         if (!def_style.isNull() && def_style->line_height.type == css_val_unspecified && def_style->line_height.value == css_generic_normal) {
-            rlh = def_font.isNull() ? node->getFont()->getHeight() : def_font->getHeight();
+            // In crengine, user-configured interline (PROP_INTERLINE_SPACE) is meant to scale line spacing
+            // from the base font size (like in many readers), and 'rem' is also based on font size.
+            // Using font->getHeight() here would make rlh dependent on font internal metrics and break
+            // expected relations like 1rlh == 1.5rem when interline is set to 150%.
+            rlh = def_em;
         }
         else if (!def_style.isNull()) {
             // Use the default style line-height with the default font size as base.
