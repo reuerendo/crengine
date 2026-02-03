@@ -2648,7 +2648,7 @@ int lengthToPx( ldomNode * node, css_length_t val, int base_px, int base_em, boo
         static bool resolving_rlh = false;
         if (resolving_rlh) {
             LVFontRef def_font = node->getDocument()->getDefaultFont();
-            int rlh = def_font.isNull() ? node->getFont()->getHeight() : def_font->getHeight();
+            int rlh = def_font.isNull() ? node->getFont()->getSize() : def_font->getSize();
             int interline_scale_factor = node->getDocument()->getInterlineScaleFactor();
             if (interline_scale_factor != INTERLINE_SCALE_FACTOR_NO_SCALE)
                 rlh = (rlh * interline_scale_factor) >> INTERLINE_SCALE_FACTOR_SHIFT;
@@ -2659,31 +2659,13 @@ int lengthToPx( ldomNode * node, css_length_t val, int base_px, int base_em, boo
 
         ldomDocument * doc = node->getDocument();
         LVFontRef def_font = doc->getDefaultFont();
-        int def_em = def_font.isNull() ? node->getFont()->getSize() : def_font->getSize();
-        int rlh;
-        css_style_ref_t def_style = doc->getDefaultStyle();
-        if (!def_style.isNull() && def_style->line_height.type == css_val_unspecified && def_style->line_height.value == css_generic_normal) {
-            // In crengine, user-configured interline (PROP_INTERLINE_SPACE) is meant to scale line spacing
-            // from the base font size (like in many readers), and 'rem' is also based on font size.
-            // Using font->getHeight() here would make rlh dependent on font internal metrics and break
-            // expected relations like 1rlh == 1.5rem when interline is set to 150%.
-            rlh = def_em;
-        }
-        else if (!def_style.isNull()) {
-            // Use the default style line-height with the default font size as base.
-            rlh = lengthToPx(node, def_style->line_height, def_em, def_em, true);
-        }
-        else {
-            rlh = def_font.isNull() ? node->getFont()->getHeight() : def_font->getHeight();
-        }
-
-        // Match existing behavior: scale according to document's _interlineScaleFactor,
-        // but not if already in screen_px.
-        if (!def_style.isNull() && def_style->line_height.type != css_val_screen_px) {
-            int interline_scale_factor = doc->getInterlineScaleFactor();
-            if (interline_scale_factor != INTERLINE_SCALE_FACTOR_NO_SCALE)
-                rlh = (rlh * interline_scale_factor) >> INTERLINE_SCALE_FACTOR_SHIFT;
-        }
+        // Match crengine's approach used for 'rem': base it on the document default font size.
+        // Then apply the user-configured interline scaling (PROP_INTERLINE_SPACE), so that
+        // interline=150% yields 1rlh == 1.5rem.
+        int rlh = def_font.isNull() ? node->getFont()->getSize() : def_font->getSize();
+        int interline_scale_factor = doc->getInterlineScaleFactor();
+        if (interline_scale_factor != INTERLINE_SCALE_FACTOR_NO_SCALE)
+            rlh = (rlh * interline_scale_factor) >> INTERLINE_SCALE_FACTOR_SHIFT;
 
         px = (rlh * val.value) >> 8;
         resolving_rlh = false;
