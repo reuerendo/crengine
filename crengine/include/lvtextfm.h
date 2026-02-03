@@ -93,6 +93,8 @@ extern "C" {
 #define LTEXT_OBJECT_IS_FLOAT             0x0010  // float:'ing node
 #define LTEXT_OBJECT_IS_FLOAT_DONE        0x0020  // float:'ing node (already dealt with)
 
+#define LTEXT_OBJECT_IS_INITIAL_LETTER     0x0040  // initial-letter object (from ::first-letter)
+
 #define LTEXT_OBJECT_IS_PAD               0x0100  // inline pad (accounting for margin/border/padding of inline element)
 #define LTEXT_OBJECT_IS_PAD_RIGHT         0x0200  // inline pad is right pad (otherwise, left pad)
 
@@ -119,6 +121,7 @@ enum ltext_extra_t {
 typedef struct
 {
     void *          object;   /**< \brief pointer to object which represents source */
+    void *          custom_object;
     TextLangCfg *   lang_cfg;
     lInt16          indent;   /**< \brief first line indent (or all but first, when negative) */
     lInt16          valign_dy; /* drift y from baseline */
@@ -204,7 +207,7 @@ typedef struct
 #define LTEXT_WORD_VALIGN_BOTTOM             0x2000 /// word is to be vertical-align: bottom
 #define LTEXT_WORD_STRUT_CONFINED            0x4000 /// word is to be fully contained into strut bounds
                                                     /// (used only when one of the 2 previous is set)
-#define LTEXT_WORD__AVAILABLE_BIT_16__       0x8000
+#define LTEXT_WORD_IS_INITIAL_LETTER         0x8000 /// word is an initial-letter object
 
 //#define LTEXT_BACKGROUND_MARK_FLAGS 0xFFFF0000l
 
@@ -388,8 +391,24 @@ void lvtextAddSourceObject(
 
 class LVDrawBuf;
 class ldomMarkedRangeList;
+class ldomNode;
 struct img_scaling_options_t;
 class BlockFloatFootprint;
+
+struct ltext_initial_letter_t {
+    ldomNode * node;
+    LVFont * font;
+    lChar32 * text;
+    lUInt16 len;
+    lUInt32 color;
+    lUInt32 bgcolor;
+    lUInt16 n_lines;
+    lUInt16 sink_lines;
+    lInt16 x;
+    lInt32 y;
+    lUInt16 width;
+    lUInt32 height;
+};
 
 /* C++ wrapper class */
 class LFormattedText
