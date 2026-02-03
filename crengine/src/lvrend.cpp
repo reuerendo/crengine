@@ -2644,12 +2644,45 @@ int lengthToPx( ldomNode * node, css_length_t val, int base_px, int base_em, boo
     }
 
     case css_val_rlh: { // value = rlh*256 (line-height of the root element)
-        LVFontRef def_font = node->getDocument()->getDefaultFont();
-        int rlh = def_font.isNull() ? node->getFont()->getHeight() : def_font->getHeight();
-        int interline_scale_factor = node->getDocument()->getInterlineScaleFactor();
-        if (interline_scale_factor != INTERLINE_SCALE_FACTOR_NO_SCALE)
-            rlh = (rlh * interline_scale_factor) >> INTERLINE_SCALE_FACTOR_SHIFT;
+        // Same cyclic issue as lh if rlh is used while computing the root style line-height.
+        static bool resolving_rlh = false;
+        if (resolving_rlh) {
+            LVFontRef def_font = node->getDocument()->getDefaultFont();
+            int rlh = def_font.isNull() ? node->getFont()->getHeight() : def_font->getHeight();
+            int interline_scale_factor = node->getDocument()->getInterlineScaleFactor();
+            if (interline_scale_factor != INTERLINE_SCALE_FACTOR_NO_SCALE)
+                rlh = (rlh * interline_scale_factor) >> INTERLINE_SCALE_FACTOR_SHIFT;
+            px = (rlh * val.value) >> 8;
+            break;
+        }
+        resolving_rlh = true;
+
+        ldomDocument * doc = node->getDocument();
+        LVFontRef def_font = doc->getDefaultFont();
+        int def_em = def_font.isNull() ? node->getFont()->getSize() : def_font->getSize();
+        int rlh;
+        css_style_ref_t def_style = doc->getDefaultStyle();
+        if (!def_style.isNull() && def_style->line_height.type == css_val_unspecified && def_style->line_height.value == css_generic_normal) {
+            rlh = def_font.isNull() ? node->getFont()->getHeight() : def_font->getHeight();
+        }
+        else if (!def_style.isNull()) {
+            // Use the default style line-height with the default font size as base.
+            rlh = lengthToPx(node, def_style->line_height, def_em, def_em, true);
+        }
+        else {
+            rlh = def_font.isNull() ? node->getFont()->getHeight() : def_font->getHeight();
+        }
+
+        // Match existing behavior: scale according to document's _interlineScaleFactor,
+        // but not if already in screen_px.
+        if (!def_style.isNull() && def_style->line_height.type != css_val_screen_px) {
+            int interline_scale_factor = doc->getInterlineScaleFactor();
+            if (interline_scale_factor != INTERLINE_SCALE_FACTOR_NO_SCALE)
+                rlh = (rlh * interline_scale_factor) >> INTERLINE_SCALE_FACTOR_SHIFT;
+        }
+
         px = (rlh * val.value) >> 8;
+        resolving_rlh = false;
         break;
     }
 
