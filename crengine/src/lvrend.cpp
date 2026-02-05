@@ -2356,7 +2356,20 @@ bool isSameFontStyle( css_style_rec_t * style1, css_style_rec_t * style2 )
         && (style1->font_size == style2->font_size)
         && (style1->font_style == style2->font_style)
         && (style1->font_name == style2->font_name)
-        && (style1->font_weight == style2->font_weight);
+        && (style1->font_weight == style2->font_weight)
+        && (style1->font_feature_settings_type == style2->font_feature_settings_type)
+        && (style1->font_feature_settings == style2->font_feature_settings);
+}
+
+static void CopyStyleFields( css_style_rec_t * dest, css_style_rec_t * source )
+{
+    dest->font_family = source->font_family;
+    dest->font_size = source->font_size;
+    dest->font_style = source->font_style;
+    dest->font_name = source->font_name;
+    dest->font_weight = source->font_weight;
+    dest->font_feature_settings_type = source->font_feature_settings_type;
+    dest->font_feature_settings = source->font_feature_settings;
 }
 
 static int rend_font_base_weight = 400;
@@ -2417,6 +2430,7 @@ LVFontRef getFont(ldomNode * node, css_style_rec_t * style, int documentId)
         style->font_family,
         lString8(style->font_name.c_str()),
         style->font_features.value, // (.type is always css_val_unspecified after setNodeStyle())
+        style->font_feature_settings_type == css_val_inherited ? lString8::empty_str : style->font_feature_settings,
         documentId, true); // useBias=true, so that our preferred font gets used
     //fnt = LVCreateFontTransform( fnt, LVFONT_TRANSFORM_EMBOLDEN );
     return fnt;
@@ -4591,6 +4605,8 @@ void copystyle( css_style_ref_t source, css_style_ref_t dest )
     dest->font_weight = source->font_weight ;
     dest->font_features.type = source->font_features.type ;
     dest->font_features.value = source->font_features.value ;
+    dest->font_feature_settings_type = source->font_feature_settings_type;
+    dest->font_feature_settings = source->font_feature_settings;
     dest->text_indent = source->text_indent ;
     dest->line_height = source->line_height ;
     dest->width = source->width ;
@@ -11520,6 +11536,105 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
         }
         delete pstyle->pseudo_elem_first_letter_catcher_style;
         pstyle->pseudo_elem_first_letter_catcher_style = NULL;
+    }
+    if ( pstyle->pseudo_elem_first_line_style ) {
+        if ( pstyle->pseudo_elem_first_line_style->display != css_d_none ) {
+            css_style_rec_t * ps = pstyle->pseudo_elem_first_line_style;
+            css_style_ref_t first_line_style( new css_style_rec_t(*pstyle) );
+            css_style_rec_t * fl = first_line_style.get();
+
+            int base_font_size = lengthToPx(enode, pstyle->font_size, 0);
+            if ( base_font_size < 1 )
+                base_font_size = 1;
+
+            if ( ps->font_family != css_ff_inherit )
+                fl->font_family = ps->font_family;
+            if ( !ps->font_name.empty() )
+                fl->font_name = ps->font_name;
+            if ( ps->font_style != css_fs_inherit )
+                fl->font_style = ps->font_style;
+            if ( ps->font_weight != css_fw_inherit )
+                fl->font_weight = ps->font_weight;
+
+            if ( ps->font_features.type == css_val_inherited && ps->font_features.value == 0 ) {
+                // keep base
+            }
+            else {
+                fl->font_features.value = ps->font_features.value | pstyle->font_features.value;
+                fl->font_features.type = css_val_unspecified;
+            }
+
+            if ( ps->font_size.type != css_val_inherited ) {
+                css_length_t fsz = ps->font_size;
+                switch ( fsz.type ) {
+                    case css_val_em:
+                        fsz.value = base_font_size * fsz.value / 256;
+                        fsz.type = css_val_screen_px;
+                        break;
+                    case css_val_ex:
+                    case css_val_ch:
+                        fsz.value = base_font_size * fsz.value / 512;
+                        fsz.type = css_val_screen_px;
+                        break;
+                    case css_val_percent:
+                        fsz.value = base_font_size * fsz.value / 100 / 256;
+                        fsz.type = css_val_screen_px;
+                        break;
+                    case css_val_screen_px:
+                    case css_val_px:
+                    case css_val_in:
+                    case css_val_cm:
+                    case css_val_mm:
+                    case css_val_pt:
+                    case css_val_pc:
+                    case css_val_rem:
+                    case css_val_vw:
+                    case css_val_vh:
+                    case css_val_vmin:
+                    case css_val_vmax:
+                        // leave as-is
+                        break;
+                    default:
+                        // keep base
+                        fsz = pstyle->font_size;
+                        break;
+                }
+                fl->font_size = fsz;
+            }
+
+            if ( ps->letter_spacing.type != css_val_inherited ) {
+                css_length_t lsp = ps->letter_spacing;
+                switch ( lsp.type ) {
+                    case css_val_em:
+                        lsp.value = base_font_size * lsp.value / 256;
+                        lsp.type = css_val_screen_px;
+                        break;
+                    case css_val_ex:
+                    case css_val_ch:
+                        lsp.value = base_font_size * lsp.value / 512;
+                        lsp.type = css_val_screen_px;
+                        break;
+                    case css_val_percent:
+                        lsp.value = base_font_size * lsp.value / 100 / 256;
+                        lsp.type = css_val_screen_px;
+                        break;
+                    default:
+                        break;
+                }
+                fl->letter_spacing = lsp;
+            }
+
+            fl->flags = 0;
+            fl->pseudo_elem_before_style = NULL;
+            fl->pseudo_elem_after_style = NULL;
+            fl->pseudo_elem_first_line_style = NULL;
+            doc->setNodeFirstLineStyle( enode->getDataIndex(), first_line_style );
+        }
+        else {
+            doc->setNodeFirstLineStyle( enode->getDataIndex(), css_style_ref_t() );
+        }
+        delete pstyle->pseudo_elem_first_line_style;
+        pstyle->pseudo_elem_first_line_style = NULL;
     }
 
     if ( nodeElementId == el_pseudoElem && (enode->hasAttribute(attr_Before) || enode->hasAttribute(attr_After)) ) {

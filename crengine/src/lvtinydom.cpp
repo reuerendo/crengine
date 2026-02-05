@@ -213,7 +213,8 @@ enum CacheFileBlockType {
     CBT_STYLE_DATA,
     CBT_BLOB_INDEX, //16
     CBT_BLOB_DATA,
-    CBT_FONT_DATA  //18
+    CBT_FONT_DATA,  //18
+    CBT_FIRSTLINE_STYLE_DATA //19
 };
 
 
@@ -3933,6 +3934,7 @@ ldomDocument::ldomDocument()
 , _doc_pages(NULL)
 #endif
 , lists(100)
+, _firstLineStyles(100)
 {
     _docIndex = ldomNode::registerDocument(this);
     ldomNode* node = allocTinyElement(NULL, 0, 0);
@@ -3985,6 +3987,7 @@ ldomDocument::ldomDocument( ldomDocument & doc )
 #endif
 , _container(doc._container)
 , lists(100)
+, _firstLineStyles(100)
 {
     _docIndex = ldomNode::registerDocument(this);
 }
@@ -5204,6 +5207,7 @@ void tinyNodeCollection::dropStyles()
     _styles.clear(-1);
     _fonts.clear(-1);
     resetNodeNumberingProps();
+    ((ldomDocument*)this)->resetNodeFirstLineStyles();
 
     int count = ((_elemCount+TNC_PART_LEN-1) >> TNC_PART_SHIFT);
     for ( int i=0; i<count; i++ ) {
@@ -10222,6 +10226,7 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted, int * ct
 
         ldomNode *node = getNode();
         int offset = getOffset();
+        const int requestedOffset = offset;
 ////        ldomXPointerEx xp(node, offset);
 ////        if ( !node->isText() ) {
 ////            //ldomXPointerEx xp(node, offset);
@@ -10263,60 +10268,283 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted, int * ct
         int lastLen = -1;
         int lastOffset = -1;
         ldomXPointerEx xp(node, offset);
+		
+        // Robust disambiguation when multiple src_text_fragment_t entries reference
+        // the same node (e.g. ::first-line): clones may keep identical offset/len,
+        // so we must select the srcIndex actually used by the word containing this
+        // pointer.
+        bool needWordScanForDisambiguation = false;
+        if ( node && node->isText() ) {
+            int sameNodeTextSrcCount = 0;
+            for ( int i=0; i<txtform->GetSrcCount(); i++ ) {
+                const src_text_fragment_t * src = txtform->GetSrcInfo(i);
+                if ( !src )
+                    continue;
+                if ( (src->flags & LTEXT_SRC_IS_OBJECT) != 0 )
+                    continue;
+                if ( src->object == node ) {
+                    sameNodeTextSrcCount++;
+                    if ( sameNodeTextSrcCount > 1 ) {
+                        needWordScanForDisambiguation = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if ( needWordScanForDisambiguation ) {
+            bool foundByWords = false;
+            int bestForwardSrcIndex = -1;
+            int bestForwardAbsStart = -1;
+            int bestBackwardSrcIndex = -1;
+            int bestBackwardAbsEnd = -1;
+            const formatted_line_t * exactLine = NULL;
+            const formatted_word_t * exactWord = NULL;
+            const src_text_fragment_t * exactSrc = NULL;
+            for ( int l = 0; l < txtform->GetLineCount() && !foundByWords; l++ ) {
+                const formatted_line_t * frmline = txtform->GetLineInfo(l);
+                for ( int w = 0; w < (int)frmline->word_count; w++ ) {
+                    const formatted_word_t * word = &frmline->words[w];
+                    if ( word->flags & LTEXT_WORD_IS_PAD )
+                        continue;
+                    if ( word->flags & (LTEXT_WORD_IS_IMAGE | LTEXT_WORD_IS_INLINE_BOX) )
+                        continue;
+                    const src_text_fragment_t * src = txtform->GetSrcInfo(word->src_text_index);
+                    if ( !src )
+                        continue;
+                    if ( (src->flags & LTEXT_SRC_IS_OBJECT) != 0 )
+                        continue;
+                    if ( src->object != node )
+                        continue;
+                    int absStart = src->t.offset + word->t.start;
+                    int absEnd = absStart + word->t.len;
+                    if ( requestedOffset >= absStart && requestedOffset < absEnd ) {
+                        // Found the exact word containing this offset.
+                        // With ::first-line clones, src_text_index ordering is not
+                        // guaranteed across lines, and the generic code below assumes
+                        // monotonic ordering: compute and return the caret rect now.
+                        exactLine = frmline;
+                        exactWord = word;
+                        exactSrc = src;
+                        srcIndex = word->src_text_index;
+                        srcLen = src->t.len;
+                        foundByWords = true;
+                        break;
+                    }
+                    if ( absStart >= requestedOffset ) {
+                        if ( bestForwardSrcIndex < 0 || absStart < bestForwardAbsStart ) {
+                            bestForwardSrcIndex = word->src_text_index;
+                            bestForwardAbsStart = absStart;
+                        }
+                    }
+                    if ( absEnd <= requestedOffset ) {
+                        if ( bestBackwardSrcIndex < 0 || absEnd > bestBackwardAbsEnd ) {
+                            bestBackwardSrcIndex = word->src_text_index;
+                            bestBackwardAbsEnd = absEnd;
+                        }
+                    }
+                }
+            }
+            if ( foundByWords && exactLine && exactWord && exactSrc ) {
+                // Compute glyph rect within exactWord.
+                LVFont *font = (LVFont *) exactSrc->t.font;
+                if ( !font )
+                    return false;
+
+                lString32 str = node->getText();
+                switch ( node->getParentNode()->getStyle()->text_transform ) {
+                    case css_tt_uppercase:
+                        str.uppercase();
+                        break;
+                    case css_tt_lowercase:
+                        str.lowercase();
+                        break;
+                    case css_tt_capitalize:
+                        str.capitalize();
+                        break;
+                    case css_tt_full_width:
+                        break;
+                    default:
+                        break;
+                }
+
+                // offset is absolute in node text. Convert to offset within the word.
+                int wordCharIndex = requestedOffset - (exactSrc->t.offset + exactWord->t.start);
+                if ( wordCharIndex < 0 )
+                    wordCharIndex = 0;
+                if ( wordCharIndex >= exactWord->t.len )
+                    wordCharIndex = exactWord->t.len - 1;
+
+                lUInt16 w[512];
+                lUInt8 flg[512];
+                lUInt32 hints = WORD_FLAGS_TO_FNT_FLAGS(exactWord->flags);
+                font->measureText(
+                    str.c_str() + exactWord->t.start,
+                    exactWord->t.len,
+                    w,
+                    flg,
+                    exactWord->width + 50,
+                    '?',
+                    exactSrc->lang_cfg,
+                    exactSrc->letter_spacing + exactWord->added_letter_spacing,
+                    false,
+                    hints );
+
+                // Get final node rect (same as in the generic path).
+                lvRect rc;
+                finalNode->getAbsRect( rc, extended );
+
+                int chx = (wordCharIndex > 0) ? w[wordCharIndex - 1] : 0;
+                int chw = w[wordCharIndex] - chx;
+                bool word_is_rtl = (exactWord->flags & LTEXT_WORD_DIRECTION_IS_RTL) != 0;
+
+                rect.top = rc.top + exactLine->y;
+                rect.bottom = rect.top + exactLine->height;
+
+                // Start from word x
+                int baseLeft = exactWord->x + rc.left + exactLine->x;
+                if ( word_is_rtl ) {
+                    // In rtl, chx is still logical accumulation; map from right side.
+                    int wordRight = baseLeft + exactWord->width;
+                    rect.right = wordRight - chx;
+                    rect.left = rect.right - (extended ? chw : 1);
+                    if ( extended && !(exactWord->flags & LTEXT_WORD_CAN_HYPH_BREAK_LINE_AFTER) )
+                        rect.left += exactWord->added_letter_spacing;
+                }
+                else {
+                    rect.left = baseLeft + chx;
+                    rect.right = rect.left + (extended ? chw : 1);
+                    if ( extended )
+                        rect.right -= exactWord->added_letter_spacing;
+                }
+
+                if ( adjusted && extended ) {
+                    // Use original requestedOffset to query bearings in node text.
+                    lChar32 ch = str[requestedOffset];
+                    rect.left += font->getLeftSideBearing(ch, true);
+                    rect.right -= font->getRightSideBearing(ch, true);
+                }
+
+                if ( rect.right <= rect.left ) {
+                    if ( word_is_rtl )
+                        rect.left = rect.right - 1;
+                    else
+                        rect.right = rect.left + 1;
+                }
+                return true;
+            }
+            if ( !foundByWords ) {
+                int pick = bestForwardSrcIndex >= 0 ? bestForwardSrcIndex : bestBackwardSrcIndex;
+                if ( pick >= 0 ) {
+                    const src_text_fragment_t * picked = txtform->GetSrcInfo(pick);
+                    if ( picked ) {
+                        srcIndex = pick;
+                        srcLen = picked->t.len;
+                    }
+                }
+            }
+        }
+
+        if ( srcIndex >= 0 ) {
+            // Keep requestedOffset for the rest of the computation.
+            offset = requestedOffset;
+        }
+        else {
+        // When multiple src_text_fragment_t entries reference the same node
+        // (possible with ::first-line), pick the one whose [offset, offset+len)
+        // contains the requested offset.
+        int bestSameNodeIndex = -1;
+        int bestSameNodeLen = -1;
+        int bestSameNodeOffset = -1;
+        bool bestSameNodeContains = false;
         for ( int i=0; i<txtform->GetSrcCount(); i++ ) {
             const src_text_fragment_t * src = txtform->GetSrcInfo(i);
             bool isObject = (src->flags&LTEXT_SRC_IS_OBJECT)!=0;
             if ( isObject && src->o.objflags & LTEXT_OBJECT_IS_FLOAT ) // skip floats
                 continue;
             if ( src->object == node ) {
-                // Check and handle the case of ::first-letter
-                if ( src->t.offset > 0 && offset < src->t.offset) {
-                    // Currently, we can only get a non-0 src->t.offset if that text
-                    // node gets its first char(s) rendered as ::first-letter and
-                    // only the remainig chars are to be rendered normally.
-                    // (If we happen to need non-0 t.offset in other contexts, we'll
-                    // have to use a src->flag bit to let it be known.)
-                    // If offset < src->t.offset, we are in the first-letter part and
-                    // we won't find it in this src.
-                    // (It may be the src_text_fragment_t just before us, and we
-                    // could use: srcIndex=i-1 , but this does not handle all
-                    // cases, especially when the first-letter is a float.)
-                    // So, find the pseudoElem that carries that first-letter
-                    ldomNode * pseudoElem = node->getFirstLetterPseudoElem();
-                    if ( pseudoElem ) {
-                        // Call us again on that pseudoElem with the same offset as provided
-                        ldomXPointer xpFirstLetter(pseudoElem, offset);
-                        return xpFirstLetter.getRect(rect, extended, adjusted);
-                        // This needs the trick in the next branch to be able to process the original text
+                // Track best match for this node
+                if ( !isObject ) {
+                    int s_off = src->t.offset;
+                    int s_len = src->t.len;
+                    bool contains = ( offset >= s_off && offset < s_off + s_len );
+                    if ( contains ) {
+                        // Prefer a containing range; if multiple contain, prefer the
+                        // one with the greatest offset (most specific).
+                        if ( !bestSameNodeContains || s_off > bestSameNodeOffset ) {
+                            bestSameNodeContains = true;
+                            bestSameNodeIndex = i;
+                            bestSameNodeLen = s_len;
+                            bestSameNodeOffset = s_off;
+                        }
                     }
-                    // otherwise fallback to work on that node
-                }
-                else if ( node->getNodeId() == el_pseudoElem && node->hasAttribute(attr_FirstLetter) ) {
-                    // We were called (by the xpFirstLetter.getRect() just above) on
-                    // a pseudoElem FirstLetter. For it to get access to the text,
-                    // we can just (for the code that follows) have our "node"
-                    // masquerade as the original node (we are called with the
-                    // original offset that will work on that text node).
-                    ldomNode * textNode = node->getFirstLetterTextNode();
-                    if ( textNode ) {
-                        node = textNode;
+                    else if ( !bestSameNodeContains ) {
+                        // No containing match yet: keep the nearest one before the offset,
+                        // otherwise keep the earliest one after.
+                        if ( bestSameNodeIndex < 0 ) {
+                            bestSameNodeIndex = i;
+                            bestSameNodeLen = s_len;
+                            bestSameNodeOffset = s_off;
+                        }
+                        else {
+                            bool best_before = bestSameNodeOffset <= offset;
+                            bool cur_before = s_off <= offset;
+                            if ( best_before && cur_before ) {
+                                if ( s_off > bestSameNodeOffset ) {
+                                    bestSameNodeIndex = i;
+                                    bestSameNodeLen = s_len;
+                                    bestSameNodeOffset = s_off;
+                                }
+                            }
+                            else if ( !best_before && !cur_before ) {
+                                if ( s_off < bestSameNodeOffset ) {
+                                    bestSameNodeIndex = i;
+                                    bestSameNodeLen = s_len;
+                                    bestSameNodeOffset = s_off;
+                                }
+                            }
+                            else if ( !best_before && cur_before ) {
+                                // Prefer a src starting before the offset over one after.
+                                bestSameNodeIndex = i;
+                                bestSameNodeLen = s_len;
+                                bestSameNodeOffset = s_off;
+                            }
+                        }
                     }
                 }
-                // Generic text node case: we found the src that came from our node
-                srcIndex = i;
-                srcLen = isObject ? 0 : src->t.len;
-                break;
+                else {
+                    // Object src: accept it as the match if we don't have any text src.
+                    if ( bestSameNodeIndex < 0 ) {
+                        bestSameNodeIndex = i;
+                        bestSameNodeLen = 0;
+                        bestSameNodeOffset = 0;
+                        bestSameNodeContains = true;
+                    }
+                }
+                continue;
             }
             lastIndex = i;
             lastLen =  isObject ? 0 : src->t.len;
             lastOffset = isObject ? 0 : src->t.offset;
             ldomXPointerEx xp2((ldomNode*)src->object, lastOffset);
             if ( xp2.compare(xp)>0 ) {
-                srcIndex = i;
-                srcLen = lastLen;
-                offset = lastOffset;
+                // If we have a match for this node, prefer it over the generic fallback.
+                if ( bestSameNodeIndex >= 0 ) {
+                    srcIndex = bestSameNodeIndex;
+                    srcLen = bestSameNodeLen;
+                    offset = bestSameNodeOffset;
+                }
+                else {
+                    srcIndex = i;
+                    srcLen = lastLen;
+                    offset = lastOffset;
+                }
                 break;
             }
+        }
+        if ( srcIndex == -1 && bestSameNodeIndex >= 0 ) {
+            srcIndex = bestSameNodeIndex;
+            srcLen = bestSameNodeLen;
+            offset = bestSameNodeOffset;
         }
         if ( srcIndex == -1 ) {
             if ( lastIndex<0 )
@@ -10324,6 +10552,10 @@ bool ldomXPointer::getRect(lvRect & rect, bool extended, bool adjusted, int * ct
             srcIndex = lastIndex;
             srcLen = lastLen;
             offset = lastOffset;
+        }
+
+        // Restore the original requested offset before searching inside words/lines.
+        offset = requestedOffset;
         }
 
         // Some state for non-linear bidi word search
@@ -16944,6 +17176,11 @@ bool ldomDocument::loadCacheFileContent(CacheLoadingCallback * formatCallback, L
         updateLoadedStyles( false );
     }
 
+    if ( !loadFirstLineStylesData() ) {
+        resetNodeFirstLineStyles();
+        _hdr.render_style_hash = 0;
+    }
+
     CRLog::trace("ldomDocument::loadCacheFileContent() - completed successfully");
     if (progressCallback) progressCallback->OnLoadFileProgress(95);
 
@@ -16957,6 +17194,70 @@ bool ldomDocument::loadCacheFileContent(CacheLoadingCallback * formatCallback, L
 }
 
 static const char * styles_magic = "CRSTYLES";
+
+static const char * firstline_styles_magic = "CRFLSTYL";
+
+bool ldomDocument::saveFirstLineStylesData()
+{
+    SerialBuf buf(0, true);
+    buf.putMagic(firstline_styles_magic);
+    lUInt32 count = (lUInt32)_firstLineStyles.length();
+    buf << count;
+    LVHashTable<lUInt32, css_style_ref_t>::iterator it = _firstLineStyles.forwardIterator();
+    LVHashTable<lUInt32, css_style_ref_t>::pair * p;
+    while ( (p = it.next()) ) {
+        buf << (lUInt32)p->key;
+        lUInt8 has_style = p->value.isNull() ? 0 : 1;
+        buf << has_style;
+        if ( has_style ) {
+            p->value->serialize(buf);
+        }
+    }
+    buf.putMagic(firstline_styles_magic);
+    if ( buf.error() )
+        return false;
+    if ( !_cacheFile->write( CBT_FIRSTLINE_STYLE_DATA, buf, COMPRESS_STYLE_DATA ) ) {
+        return false;
+    }
+    return !buf.error();
+}
+
+bool ldomDocument::loadFirstLineStylesData()
+{
+    SerialBuf buf(0, true);
+    if ( !_cacheFile->read( CBT_FIRSTLINE_STYLE_DATA, buf ) ) {
+        return false;
+    }
+    buf.checkMagic(firstline_styles_magic);
+    lUInt32 count = 0;
+    buf >> count;
+    if ( buf.error() )
+        return false;
+    _firstLineStyles.clear();
+    for ( lUInt32 i = 0; i < count; i++ ) {
+        lUInt32 key = 0;
+        buf >> key;
+        if ( buf.error() )
+            return false;
+        lUInt8 has_style = 0;
+        buf >> has_style;
+        if ( buf.error() )
+            return false;
+        if ( has_style ) {
+            css_style_ref_t rec( new css_style_rec_t() );
+            if ( !rec->deserialize(buf) )
+                return false;
+            _firstLineStyles.set(key, rec);
+        }
+        else {
+            _firstLineStyles.set(key, css_style_ref_t());
+        }
+    }
+    buf.checkMagic(firstline_styles_magic);
+    if ( buf.error() )
+        return false;
+    return true;
+}
 
 #define CHECK_EXPIRATION(s) \
     if ( maxTime.expired() ) { CRLog::info("timer expired while " s); return CR_TIMEOUT; }
@@ -17167,6 +17468,13 @@ ContinuousOperationResult ldomDocument::saveChanges( CRTimerUtil & maxTime, LVDo
             return CR_ERROR;
         }
         if (progressCallback) progressCallback->OnSaveCacheFileProgress(90);
+        // fall through
+    case 105:
+        _mapSavingStage = 105;
+        if ( !saveFirstLineStylesData() ) {
+            CRLog::error("Error while writing first-line style data");
+            return CR_ERROR;
+        }
         // fall through
     case 11:
         _mapSavingStage = 11;
@@ -20962,14 +21270,29 @@ void ldomDocument::resetNodeNumberingProps()
     lists.clear();
 }
 
+void ldomDocument::resetNodeFirstLineStyles()
+{
+    _firstLineStyles.clear();
+}
+
 ListNumberingPropsRef ldomDocument::getNodeNumberingProps( lUInt32 nodeDataIndex )
 {
     return lists.get(nodeDataIndex);
 }
 
+css_style_ref_t ldomDocument::getNodeFirstLineStyle( lUInt32 nodeDataIndex )
+{
+    return _firstLineStyles.get(nodeDataIndex);
+}
+
 void ldomDocument::setNodeNumberingProps( lUInt32 nodeDataIndex, ListNumberingPropsRef v )
 {
     lists.set(nodeDataIndex, v);
+}
+
+void ldomDocument::setNodeFirstLineStyle( lUInt32 nodeDataIndex, css_style_ref_t v )
+{
+    _firstLineStyles.set(nodeDataIndex, v);
 }
 
 /// returns the sum of this node and its parents' top and bottom margins, borders and paddings
@@ -22014,9 +22337,9 @@ void runBasicTinyDomUnitTests()
 
     CRLog::info("* font cache");
     {
-        font_ref_t font1 = fontMan->GetFont(24, 400, false, css_ff_sans_serif, cs8("DejaVu Sans"));
-        font_ref_t font2 = fontMan->GetFont(24, 400, false, css_ff_sans_serif, cs8("DejaVu Sans"));
-        font_ref_t font3 = fontMan->GetFont(28, 800, false, css_ff_serif, cs8("DejaVu Sans Condensed"));
+        font_ref_t font1 = fontMan->GetFont(24, 400, false, css_ff_sans_serif, cs8("DejaVu Sans"), 0, lString8::empty_str);
+        font_ref_t font2 = fontMan->GetFont(24, 400, false, css_ff_sans_serif, cs8("DejaVu Sans"), 0, lString8::empty_str);
+        font_ref_t font3 = fontMan->GetFont(28, 800, false, css_ff_serif, cs8("DejaVu Sans Condensed"), 0, lString8::empty_str);
         MYASSERT(el1->getFont().isNull(), "font is not set");
         el1->setFont(font1);
         MYASSERT(!el1->getFont().isNull(), "font is set");
