@@ -122,7 +122,7 @@ lUInt32 calcHash(css_style_rec_t & rec)
         h = h * 31 + (lUInt32)rec.box_sizing;
         h = h * 31 + (lUInt32)rec.caption_side;
         h = h * 31 + (lUInt32)rec.cr_hint.pack();
-        h = h * 31 + (lUInt32)rec.initial_letter.pack();
+        h = h * 31 + (lUInt32)rec.initial_letter;
         h = h * 31 + (lUInt32)rec.font_name.getHash();
         h = h * 31 + (lUInt32)rec.background_image.getHash();
         h = h * 31 + (lUInt32)rec.content.getHash();
