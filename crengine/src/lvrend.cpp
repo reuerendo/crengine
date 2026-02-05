@@ -4221,7 +4221,26 @@ void renderFinalBlock( ldomNode * enode, LFormattedText * txform, RenderRectAcce
                                 }
                                 int em = font->getSize();
                                 int letter_spacing = lengthToPx(enode, style->letter_spacing, em);
-                                txform->AddSourceLine( firstLetterTxt.c_str(), firstLetterTxt.length(), cl, bgcl, font.get(), lang_cfg, flags|LTEXT_FLAG_OWNTEXT, line_h, valign_dy, indent, enode, 0, letter_spacing);
+                                if ( style->initial_letter != 0 ) {
+                                    // Emit as a special object, to be laid out as initial-letter.
+                                    ltext_initial_letter_t * il = (ltext_initial_letter_t *)calloc(1, sizeof(ltext_initial_letter_t));
+                                    il->node = enode;
+                                    il->font = font.get();
+                                    if ( il->font )
+                                        il->font->AddRef();
+                                    il->color = cl;
+                                    il->bgcolor = bgcl;
+                                    il->len = (lUInt16)firstLetterTxt.length();
+                                    il->text = (lChar32*)malloc( sizeof(lChar32) * (il->len + 1) );
+                                    memcpy(il->text, firstLetterTxt.c_str(), sizeof(lChar32) * il->len );
+                                    il->text[il->len] = 0;
+                                    il->n_lines = (lUInt16)((style->initial_letter >> 16) & 0xFFFF);
+                                    il->sink_lines = (lUInt16)(style->initial_letter & 0xFFFF);
+                                    txform->AddSourceObject(flags, LTEXT_OBJECT_IS_INITIAL_LETTER, line_h, valign_dy, indent, il, lang_cfg, letter_spacing);
+                                }
+                                else {
+                                    txform->AddSourceLine( firstLetterTxt.c_str(), firstLetterTxt.length(), cl, bgcl, font.get(), lang_cfg, flags|LTEXT_FLAG_OWNTEXT, line_h, valign_dy, indent, enode, 0, letter_spacing);
+                                }
                                 flags &= ~LTEXT_FLAG_NEWLINE & ~LTEXT_SRC_IS_CLEAR_BOTH; // clear newline flag
                             }
                         }
@@ -6945,12 +6964,21 @@ public:
         // extra1..extra5 fields. If we meet more than that, we
         // will fall back to footprints.
         int floats_involved = 0;
+        bool force_footprints = false; // needed for pseudoElem first-letter floats (initial-letter)
         // printf("left_x = x_min %d + d_left %d = %d  top_y=%d\n", x_min, d_left, left_x, top_y);
         for (int i=0; i<_floats.length(); i++) {
             BlockFloat * flt = _floats[i];
             if ( BLOCK_RENDERING(rend_flags, ALLOW_EXACT_FLOATS_FOOTPRINTS) ) {
                 // Ignore floats already passed by and possibly not yet removed
                 if (flt->bottom > top_y) {
+                    // Initial-letter is implemented as a forwarded embedded float associated
+                    // with a pseudo-element node. It is not a floatBox node, so if we store
+                    // it as a floatId, later restore() would try to rebuild it from a node
+                    // RenderRectAccessor and fail. Force the footprint-based storage.
+                    if ( flt->node && flt->node->getNodeId() == el_pseudoElem
+                                  && flt->node->hasAttribute(attr_FirstLetter) ) {
+                        force_footprints = true;
+                    }
                     if (floats_involved < 5) { // at most 5 slots
                         // Do the following even if we end up seeing more
                         // than 5 floats and not using all that.
@@ -7010,7 +7038,7 @@ public:
                 }
             }
         }
-        if ( floats_involved > 0 && floats_involved <= 5) {
+        if ( !force_footprints && floats_involved > 0 && floats_involved <= 5) {
             // We can use floatIds
             footprint.use_floatIds = true;
             footprint.nb_floatIds = floats_involved;
@@ -11508,6 +11536,105 @@ void setNodeStyle( ldomNode * enode, css_style_ref_t parent_style, LVFontRef par
         }
         delete pstyle->pseudo_elem_first_letter_catcher_style;
         pstyle->pseudo_elem_first_letter_catcher_style = NULL;
+    }
+    if ( pstyle->pseudo_elem_first_line_style ) {
+        if ( pstyle->pseudo_elem_first_line_style->display != css_d_none ) {
+            css_style_rec_t * ps = pstyle->pseudo_elem_first_line_style;
+            css_style_ref_t first_line_style( new css_style_rec_t(*pstyle) );
+            css_style_rec_t * fl = first_line_style.get();
+
+            int base_font_size = lengthToPx(enode, pstyle->font_size, 0);
+            if ( base_font_size < 1 )
+                base_font_size = 1;
+
+            if ( ps->font_family != css_ff_inherit )
+                fl->font_family = ps->font_family;
+            if ( !ps->font_name.empty() )
+                fl->font_name = ps->font_name;
+            if ( ps->font_style != css_fs_inherit )
+                fl->font_style = ps->font_style;
+            if ( ps->font_weight != css_fw_inherit )
+                fl->font_weight = ps->font_weight;
+
+            if ( ps->font_features.type == css_val_inherited && ps->font_features.value == 0 ) {
+                // keep base
+            }
+            else {
+                fl->font_features.value = ps->font_features.value | pstyle->font_features.value;
+                fl->font_features.type = css_val_unspecified;
+            }
+
+            if ( ps->font_size.type != css_val_inherited ) {
+                css_length_t fsz = ps->font_size;
+                switch ( fsz.type ) {
+                    case css_val_em:
+                        fsz.value = base_font_size * fsz.value / 256;
+                        fsz.type = css_val_screen_px;
+                        break;
+                    case css_val_ex:
+                    case css_val_ch:
+                        fsz.value = base_font_size * fsz.value / 512;
+                        fsz.type = css_val_screen_px;
+                        break;
+                    case css_val_percent:
+                        fsz.value = base_font_size * fsz.value / 100 / 256;
+                        fsz.type = css_val_screen_px;
+                        break;
+                    case css_val_screen_px:
+                    case css_val_px:
+                    case css_val_in:
+                    case css_val_cm:
+                    case css_val_mm:
+                    case css_val_pt:
+                    case css_val_pc:
+                    case css_val_rem:
+                    case css_val_vw:
+                    case css_val_vh:
+                    case css_val_vmin:
+                    case css_val_vmax:
+                        // leave as-is
+                        break;
+                    default:
+                        // keep base
+                        fsz = pstyle->font_size;
+                        break;
+                }
+                fl->font_size = fsz;
+            }
+
+            if ( ps->letter_spacing.type != css_val_inherited ) {
+                css_length_t lsp = ps->letter_spacing;
+                switch ( lsp.type ) {
+                    case css_val_em:
+                        lsp.value = base_font_size * lsp.value / 256;
+                        lsp.type = css_val_screen_px;
+                        break;
+                    case css_val_ex:
+                    case css_val_ch:
+                        lsp.value = base_font_size * lsp.value / 512;
+                        lsp.type = css_val_screen_px;
+                        break;
+                    case css_val_percent:
+                        lsp.value = base_font_size * lsp.value / 100 / 256;
+                        lsp.type = css_val_screen_px;
+                        break;
+                    default:
+                        break;
+                }
+                fl->letter_spacing = lsp;
+            }
+
+            fl->flags = 0;
+            fl->pseudo_elem_before_style = NULL;
+            fl->pseudo_elem_after_style = NULL;
+            fl->pseudo_elem_first_line_style = NULL;
+            doc->setNodeFirstLineStyle( enode->getDataIndex(), first_line_style );
+        }
+        else {
+            doc->setNodeFirstLineStyle( enode->getDataIndex(), css_style_ref_t() );
+        }
+        delete pstyle->pseudo_elem_first_line_style;
+        pstyle->pseudo_elem_first_line_style = NULL;
     }
 
     if ( nodeElementId == el_pseudoElem && (enode->hasAttribute(attr_Before) || enode->hasAttribute(attr_After)) ) {
