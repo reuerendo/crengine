@@ -4221,7 +4221,26 @@ void renderFinalBlock( ldomNode * enode, LFormattedText * txform, RenderRectAcce
                                 }
                                 int em = font->getSize();
                                 int letter_spacing = lengthToPx(enode, style->letter_spacing, em);
-                                txform->AddSourceLine( firstLetterTxt.c_str(), firstLetterTxt.length(), cl, bgcl, font.get(), lang_cfg, flags|LTEXT_FLAG_OWNTEXT, line_h, valign_dy, indent, enode, 0, letter_spacing);
+                                if ( style->initial_letter != 0 ) {
+                                    // Emit as a special object, to be laid out as initial-letter.
+                                    ltext_initial_letter_t * il = (ltext_initial_letter_t *)calloc(1, sizeof(ltext_initial_letter_t));
+                                    il->node = enode;
+                                    il->font = font.get();
+                                    if ( il->font )
+                                        il->font->AddRef();
+                                    il->color = cl;
+                                    il->bgcolor = bgcl;
+                                    il->len = (lUInt16)firstLetterTxt.length();
+                                    il->text = (lChar32*)malloc( sizeof(lChar32) * (il->len + 1) );
+                                    memcpy(il->text, firstLetterTxt.c_str(), sizeof(lChar32) * il->len );
+                                    il->text[il->len] = 0;
+                                    il->n_lines = (lUInt16)((style->initial_letter >> 16) & 0xFFFF);
+                                    il->sink_lines = (lUInt16)(style->initial_letter & 0xFFFF);
+                                    txform->AddSourceObject(flags, LTEXT_OBJECT_IS_INITIAL_LETTER, line_h, valign_dy, indent, il, lang_cfg, letter_spacing);
+                                }
+                                else {
+                                    txform->AddSourceLine( firstLetterTxt.c_str(), firstLetterTxt.length(), cl, bgcl, font.get(), lang_cfg, flags|LTEXT_FLAG_OWNTEXT, line_h, valign_dy, indent, enode, 0, letter_spacing);
+                                }
                                 flags &= ~LTEXT_FLAG_NEWLINE & ~LTEXT_SRC_IS_CLEAR_BOTH; // clear newline flag
                             }
                         }
@@ -6945,12 +6964,21 @@ public:
         // extra1..extra5 fields. If we meet more than that, we
         // will fall back to footprints.
         int floats_involved = 0;
+        bool force_footprints = false; // needed for pseudoElem first-letter floats (initial-letter)
         // printf("left_x = x_min %d + d_left %d = %d  top_y=%d\n", x_min, d_left, left_x, top_y);
         for (int i=0; i<_floats.length(); i++) {
             BlockFloat * flt = _floats[i];
             if ( BLOCK_RENDERING(rend_flags, ALLOW_EXACT_FLOATS_FOOTPRINTS) ) {
                 // Ignore floats already passed by and possibly not yet removed
                 if (flt->bottom > top_y) {
+                    // Initial-letter is implemented as a forwarded embedded float associated
+                    // with a pseudo-element node. It is not a floatBox node, so if we store
+                    // it as a floatId, later restore() would try to rebuild it from a node
+                    // RenderRectAccessor and fail. Force the footprint-based storage.
+                    if ( flt->node && flt->node->getNodeId() == el_pseudoElem
+                                  && flt->node->hasAttribute(attr_FirstLetter) ) {
+                        force_footprints = true;
+                    }
                     if (floats_involved < 5) { // at most 5 slots
                         // Do the following even if we end up seeing more
                         // than 5 floats and not using all that.
@@ -7010,7 +7038,7 @@ public:
                 }
             }
         }
-        if ( floats_involved > 0 && floats_involved <= 5) {
+        if ( !force_footprints && floats_involved > 0 && floats_involved <= 5) {
             // We can use floatIds
             footprint.use_floatIds = true;
             footprint.nb_floatIds = floats_involved;

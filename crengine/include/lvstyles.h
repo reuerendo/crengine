@@ -94,7 +94,8 @@ enum css_style_rec_important_bit {
     imp_bit_box_sizing,
     imp_bit_caption_side,
     imp_bit_content,
-    imp_bit_cr_hint
+    imp_bit_cr_hint,
+    imp_bit_initial_letter
 };
 #define NB_IMP_BITS 71 // The number of lines in the enum above: KEEP IT UPDATED.
 
@@ -136,6 +137,7 @@ struct css_style_rec_tag {
     css_text_align_t     text_align_last;
     css_text_decoration_t text_decoration;
     css_text_transform_t text_transform;
+    lUInt32              initial_letter; // packed initial-letter: (size<<16)|sink, 0 = normal
     css_length_t         vertical_align;
     css_font_family_t    font_family;
     lString8             font_name;
@@ -207,6 +209,7 @@ struct css_style_rec_tag {
     , text_align_last(css_ta_inherit)
     , text_decoration (css_td_inherit)
     , text_transform (css_tt_inherit)
+    , initial_letter(0)
     , vertical_align(css_val_unspecified, css_va_baseline)
     , font_family(css_ff_inherit)
     , font_size(css_val_inherited, 0)
