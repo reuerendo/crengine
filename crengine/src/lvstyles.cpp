@@ -59,6 +59,7 @@ lUInt32 calcHash(css_style_rec_t & rec)
         h = h * 31 + (lUInt32)rec.text_align_last;
         h = h * 31 + (lUInt32)rec.text_decoration;
         h = h * 31 + (lUInt32)rec.text_transform;
+        h = h * 31 + (lUInt32)rec.initial_letter;
         h = h * 31 + (lUInt32)rec.hyphenate;
         h = h * 31 + (lUInt32)rec.list_style_type;
         h = h * 31 + (lUInt32)rec.letter_spacing.pack();

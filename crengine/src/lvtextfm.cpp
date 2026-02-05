@@ -5001,7 +5001,7 @@ public:
                                             il->font->getItalic() ? true : false,
                                             il->font->getFontFamily(),
                                             il->font->getTypeFace(),
-                                            0, -1, false);
+                                            0, lString8::empty_str, -1, false);
                                         if ( newFont.isNull() )
                                             break;
                                         int got_cap = getCapHeight(newFont.get());
