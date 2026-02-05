@@ -1347,7 +1347,7 @@ void CRMenu::drawClient()
     rc.top += 0; //ITEM_MARGIN;
     //rc.left += ITEM_MARGIN;
     //rc.right -= ITEM_MARGIN;
-    LVFontRef numberFont( fontMan->GetFont( MENU_NUMBER_FONT_SIZE, 600, true, css_ff_sans_serif, cs8("Arial")) );
+    LVFontRef numberFont( fontMan->GetFont( MENU_NUMBER_FONT_SIZE, 600, true, css_ff_sans_serif, cs8("Arial"), 0, lString8::empty_str) );
     for ( int index=0; index<_pageItems; index++ ) {
         int i = _topItem + index;
         if ( i >= _items.length() )
