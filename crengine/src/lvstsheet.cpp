@@ -45,6 +45,7 @@ enum css_decl_code {
     cssd_text_decoration,
     cssd_text_decoration2, // -epub-text-decoration (WebKit css extension)
     cssd_text_transform,
+    cssd_initial_letter,
     cssd_hyphenate,  // hyphens (proper css property name)
     cssd_hyphenate2, // -webkit-hyphens (used by authors as an alternative to adobe-hyphenate)
     cssd_hyphenate3, // adobe-hyphenate (used by late Adobe RMSDK)
@@ -156,6 +157,7 @@ static const char * css_decl_name[] = {
     "text-decoration",
     "-epub-text-decoration",
     "text-transform",
+    "initial-letter",
     "hyphens",
     "-webkit-hyphens",
     "adobe-hyphenate",
@@ -320,6 +322,7 @@ enum LVCssSelectorPseudoElement
     csspe_before = 1,   // ::before
     csspe_after  = 2,   // ::after
     csspe_first_letter  = 3,   // ::first-letter
+    csspe_first_line = 4, // ::first-line
 };
 
 static const char * css_pseudo_elements[] =
@@ -327,6 +330,7 @@ static const char * css_pseudo_elements[] =
     "before",
     "after",
     "first-letter",
+    "first-line",
     NULL
 };
 
@@ -3651,6 +3655,53 @@ bool LVCssDeclaration::parse( const char * &decl, bool higher_importance, lxmlDo
                 IF_g_SET_n_AND_break(true, css_tt_inherit, css_tt_none)
                 n = parse_name( decl, css_tt_names, -1 );
                 break;
+
+            case cssd_initial_letter:
+                {
+                    if ( g >= 0 ) {
+                        // Not inherited by default.
+                        if ( g == css_g_initial ) {
+                            buf<<(lUInt32) (prop_code | importance | parse_important(decl));
+                            buf<<(lUInt32) 0;
+                        }
+                        else if ( g == css_g_inherit ) {
+                            buf<<(lUInt32) (prop_code | importance | parse_important(decl));
+                            buf<<(lUInt32) 0xFFFFFFFFU; // special: inherit
+                        }
+                        else { // unset
+                            buf<<(lUInt32) (prop_code | importance | parse_important(decl));
+                            buf<<(lUInt32) 0;
+                        }
+                        break;
+                    }
+                    // Accept only: normal | <int> [<int>]
+                    if ( substr_icompare("normal", decl) ) {
+                        buf<<(lUInt32) (prop_code | importance | parse_important(decl));
+                        buf<<(lUInt32) 0;
+                        break;
+                    }
+                    unsigned size = 0;
+                    unsigned sink = 0;
+                    if ( !parse_integer( decl, size ) || size == 0 || size > 0xFFFF ) {
+                        // Invalid -> ignore
+                        break;
+                    }
+                    // Optional second integer
+                    const char * save = decl;
+                    if ( parse_integer( decl, sink ) ) {
+                        if ( sink == 0 || sink > 0xFFFF ) {
+                            // invalid sink -> revert and use default sink=size
+                            decl = save;
+                            sink = size;
+                        }
+                    }
+                    else {
+                        sink = size;
+                    }
+                    buf<<(lUInt32) (prop_code | importance | parse_important(decl));
+                    buf<<(lUInt32) ((size<<16) | (sink & 0xFFFF));
+                }
+                break;
             case cssd_hyphenate:
             case cssd_hyphenate2:
             case cssd_hyphenate3:
@@ -5243,6 +5294,22 @@ void LVCssDeclaration::apply( css_style_rec_t * style, const ldomNode * node ) c
             style->Apply( (css_text_transform_t) *p++, &style->text_transform, imp_bit_text_transform, is_important );
             style->flags |= STYLE_REC_FLAG_INHERITABLE_APPLIED;
             break;
+        case cssd_initial_letter:
+            {
+                lUInt32 v = (lUInt32) *p++;
+                if ( v == 0xFFFFFFFFU ) {
+                    // inherit
+                    v = css_style_rec_t().initial_letter; // default is normal (0)
+                    if ( node && node->getParentNode() ) {
+                        css_style_ref_t ps = node->getParentNode()->getStyle();
+                        if ( !ps.isNull() )
+                            v = ps->initial_letter;
+                    }
+                }
+                style->Apply( v, &style->initial_letter, imp_bit_initial_letter, is_important );
+                // Not inheritable by default
+            }
+            break;
         case cssd_hyphenate:
             style->Apply( (css_hyphenate_t) *p++, &style->hyphenate, imp_bit_hyphenate, is_important );
             style->flags |= STYLE_REC_FLAG_INHERITABLE_APPLIED;
@@ -6183,7 +6250,7 @@ bool LVCssSelectorRule::check( const ldomNode * & node, bool allow_cache ) const
         return true; // should it be: return !node->isBoxingNode(); ?
     case cssrt_pseudoclass:   // E:pseudo-class
         {
-            int nodeId;
+            int nodeId = 0;
             switch (_attrid) {
                 case csspc_root:
                 {
@@ -7094,6 +7161,12 @@ void LVCssSelector::applyToPseudoElement( const ldomNode * node, css_style_rec_t
                 style->pseudo_elem_first_letter_catcher_style = new css_style_rec_t;
             }
             target_style = style->pseudo_elem_first_letter_catcher_style;
+        }
+        else if ( _pseudo_elem == csspe_first_line ) {
+            if ( !style->pseudo_elem_first_line_style ) {
+                style->pseudo_elem_first_line_style = new css_style_rec_t;
+            }
+            target_style = style->pseudo_elem_first_line_style;
         }
     }
 

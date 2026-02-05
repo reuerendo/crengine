@@ -177,6 +177,18 @@ void lvtextFreeFormatter( formatted_text_fragment_t * pbuffer )
         {
             if (pbuffer->srctext[i].flags & LTEXT_FLAG_OWNTEXT)
                 free( (void*)pbuffer->srctext[i].t.text );
+            if ( pbuffer->srctext[i].flags & LTEXT_SRC_IS_OBJECT ) {
+                if ( pbuffer->srctext[i].o.objflags & LTEXT_OBJECT_IS_INITIAL_LETTER ) {
+                    ltext_initial_letter_t * il = (ltext_initial_letter_t *)pbuffer->srctext[i].custom_object;
+                    if ( il ) {
+                        if ( il->font )
+                            il->font->Release();
+                        if ( il->text )
+                            free( il->text );
+                        free( il );
+                    }
+                }
+            }
         }
         free( pbuffer->srctext );
     }
@@ -301,7 +313,19 @@ void lvtextAddSourceObject(
     pline->o.objflags = objflags;
     pline->o.width = width;
     pline->o.height = height;
-    pline->object = object;
+    if ( objflags & LTEXT_OBJECT_IS_INITIAL_LETTER ) {
+        // For initial-letter, 'object' is a ltext_initial_letter_t*.
+        // Keep a valid ldomNode* in pline->object, and store the custom struct in custom_object.
+        ltext_initial_letter_t * il = (ltext_initial_letter_t *)object;
+        pline->custom_object = il;
+        pline->object = il ? (void*)il->node : NULL;
+        pline->color = il ? il->color : LTEXT_COLOR_CURRENT;
+        pline->bgcolor = il ? il->bgcolor : LTEXT_COLOR_CURRENT;
+    }
+    else {
+        pline->object = object;
+        pline->custom_object = NULL;
+    }
     pline->indent = indent;
     pline->interval = interval;
     pline->valign_dy = valign_dy;
@@ -323,6 +347,8 @@ int getLTextExtraProperty( src_text_fragment_t * srcline, ltext_extra_t extra_pr
     if ( !(srcline->flags & LTEXT_HAS_EXTRA) )
         return 0;
     if ( !srcline->object )
+        return 0;
+    if ( (srcline->flags & LTEXT_SRC_IS_OBJECT) && (srcline->o.objflags & LTEXT_OBJECT_IS_INITIAL_LETTER) )
         return 0;
     ldomNode * node = (ldomNode *) srcline->object;
     if ( node->isText() )
@@ -355,10 +381,12 @@ void LFormattedText::AddSourceObject(
             lInt16          letter_spacing
      )
 {
-    ldomNode * node = (ldomNode*)object;
-    if (!node || node->isNull()) {
-        TR("LFormattedText::AddSourceObject(): node is NULL!");
-        return;
+    if ( !(objflags & LTEXT_OBJECT_IS_INITIAL_LETTER) ) {
+        ldomNode * node = (ldomNode*)object;
+        if (!node || node->isNull()) {
+            TR("LFormattedText::AddSourceObject(): node is NULL!");
+            return;
+        }
     }
     // Whether the object is a float, an inline-block or an image,
     // nothing much to do with it at this point: we add it with
@@ -440,6 +468,8 @@ public:
 #define FLOAT_CHAR_INDEX      ((lUInt16)0xFFFE)
 #define INLINEBOX_CHAR_INDEX  ((lUInt16)0xFFFD)
 #define PAD_CHAR_INDEX        ((lUInt16)0xFFFC)
+
+#define INITIAL_LETTER_CHAR_INDEX ((lUInt16)0xFFFB)
 
     LVFormatter(formatted_text_fragment_t * pbuffer)
     : m_pbuffer(pbuffer), m_length(0), m_size(0), m_staticBufs(true), m_y(0)
@@ -1166,6 +1196,13 @@ public:
                     pos++;
                     // No need to update prev_was_space or last_non_space_pos
                     // No need for libunibreak object replacement character
+                }
+                else if ( src->o.objflags & LTEXT_OBJECT_IS_INITIAL_LETTER ) {
+                    m_text[pos] = 0;
+                    m_srcs[pos] = src;
+                    m_charindex[pos] = INITIAL_LETTER_CHAR_INDEX;
+                    m_flags[pos] = LCHAR_IS_OBJECT;
+                    pos++;
                 }
                 else if ( src->o.objflags & LTEXT_OBJECT_IS_INLINE_BOX ) {
                     // Note: we shouldn't meet any EmbeddedBlock inlineBox here (and in
@@ -2156,6 +2193,15 @@ public:
                         m_widths[start] = lastWidth;
                         // Don't touch first_word_len: we might want to ensure locked
                         // spacing on what's after.
+                    }
+                    else if ( m_charindex[start] == INITIAL_LETTER_CHAR_INDEX ) {
+                        // initial-letter is handled as a special embedded float.
+                        // It must not be measured as a regular inline object here.
+                        // It will get its real dimensions/positioning when the embedded
+                        // float is created/positioned later in the formatter.
+                        m_widths[start] = lastWidth;
+                        // Give up on locked spacing: the following text will wrap around it.
+                        first_word_len = -1;
                     }
                     else if ( m_charindex[start] == INLINEBOX_CHAR_INDEX ) {
                         // Render this inlineBox to get its width, similarly to how we
@@ -3470,7 +3516,8 @@ public:
         // We can just skip FLOATs in addLine(), as they were taken
         // care of in processParagraph() to just reduce the available width
         // So skip floats at start:
-        while (lastSrc && (lastSrc->flags & LTEXT_SRC_IS_OBJECT) && (lastSrc->o.objflags & LTEXT_OBJECT_IS_FLOAT) ) {
+        while (lastSrc && (lastSrc->flags & LTEXT_SRC_IS_OBJECT)
+                && (lastSrc->o.objflags & (LTEXT_OBJECT_IS_FLOAT|LTEXT_OBJECT_IS_INITIAL_LETTER)) ) {
             start++;
             lastSrc = m_srcs[start];
         }
@@ -3656,7 +3703,7 @@ public:
                 while (wstart < i) {
                     if ( !(m_flags[wstart] & LCHAR_IS_COLLAPSED_SPACE) &&
                          !(m_flags[wstart] & LCHAR_IS_TO_IGNORE) &&
-                            !(m_srcs[wstart]->flags & LTEXT_SRC_IS_OBJECT && m_srcs[wstart]->o.objflags & LTEXT_OBJECT_IS_FLOAT) )
+                            !(m_srcs[wstart]->flags & LTEXT_SRC_IS_OBJECT && (m_srcs[wstart]->o.objflags & (LTEXT_OBJECT_IS_FLOAT|LTEXT_OBJECT_IS_INITIAL_LETTER))) )
                         break;
                     // printf("_"); // to see when we remove one, before the TR() below
                     wstart++;
@@ -3683,7 +3730,7 @@ public:
                                 // src text
                                 *((lChar32 *) (m_srcs[wstart]->t.text + m_srcs[wstart]->t.offset + m_charindex[wstart])) = U' ';
                             }
-                            else if (m_srcs[wstart]->flags & LTEXT_SRC_IS_OBJECT && m_srcs[wstart]->o.objflags & LTEXT_OBJECT_IS_FLOAT) {
+                            else if (m_srcs[wstart]->flags & LTEXT_SRC_IS_OBJECT && (m_srcs[wstart]->o.objflags & (LTEXT_OBJECT_IS_FLOAT|LTEXT_OBJECT_IS_INITIAL_LETTER))) {
                                 // But not if what's on this line is a float (the code below don't expect floats)
                                 // Keep the empty line with the strut height.
                                 continue;
@@ -4690,6 +4737,77 @@ public:
         // measure paragraph text
         measureText();
 
+        // ::first-line: affect line breaking/metrics.
+        // We first apply the overlay to the whole paragraph to let the existing
+        // line-breaking logic determine the exact first line end with correct widths.
+        // Right after the first line is emitted, we restore base metrics for the rest.
+        bool firstLineOverlayActive = false;
+        LVArray<src_text_fragment_t*> base_srcs;
+        base_srcs.reserve(m_length);
+        {
+            src_text_fragment_t * first_src = &m_pbuffer->srctext[start];
+            ldomNode * owner = first_src && first_src->object ? (ldomNode *)first_src->object : NULL;
+            if ( owner && owner->isText() )
+                owner = owner->getParentNode();
+            while ( owner && !owner->isNull() && owner->isElement() && owner->getRendMethod() != erm_final ) {
+                owner = owner->getParentNode();
+            }
+            if ( owner && !owner->isNull() ) {
+                ldomDocument * doc = owner->getDocument();
+                css_style_ref_t flstyle = doc->getNodeFirstLineStyle( owner->getDataIndex() );
+                if ( !flstyle.isNull() ) {
+                    LVFontRef flfont = getFont(owner, flstyle.get(), doc->getFontContextDocIndex());
+                    if ( !flfont.isNull() ) {
+                        int em = flfont->getSize();
+                        lInt16 fl_letter_spacing = (lInt16)lengthToPx(owner, flstyle->letter_spacing, em);
+
+                        // Save base mapping
+                        for ( int i=0; i<m_length; i++ )
+                            base_srcs.add( m_srcs[i] );
+
+                        // Clone srctext fragments (at most one clone per original) and remap all chars
+                        LVArray<src_text_fragment_t*> orig;
+                        LVArray<src_text_fragment_t*> clone;
+                        for ( int i=0; i<m_length; i++ ) {
+                            if ( m_flags[i] & LCHAR_IS_OBJECT )
+                                continue;
+                            src_text_fragment_t * s = m_srcs[i];
+                            if ( !s )
+                                continue;
+                            int found = -1;
+                            for ( int j=0; j<orig.length(); j++ ) {
+                                if ( orig[j] == s ) {
+                                    found = j;
+                                    break;
+                                }
+                            }
+                            if ( found < 0 ) {
+                                int srctextsize = (m_pbuffer->srctextlen + FRM_ALLOC_SIZE-1) / FRM_ALLOC_SIZE * FRM_ALLOC_SIZE;
+                                if ( m_pbuffer->srctextlen >= srctextsize ) {
+                                    srctextsize += FRM_ALLOC_SIZE;
+                                    m_pbuffer->srctext = cr_realloc( m_pbuffer->srctext, srctextsize );
+                                }
+                                src_text_fragment_t * c = &m_pbuffer->srctext[ m_pbuffer->srctextlen++ ];
+                                *c = *s;
+                                // Ensure we don't double free the underlying text buffer
+                                c->flags &= ~LTEXT_FLAG_OWNTEXT;
+                                c->t.font = flfont.get();
+                                c->letter_spacing = fl_letter_spacing;
+                                c->index = (lUInt16)(m_pbuffer->srctextlen-1);
+                                orig.add( s );
+                                clone.add( c );
+                                found = orig.length()-1;
+                            }
+                            m_srcs[i] = clone[found];
+                        }
+
+                        firstLineOverlayActive = true;
+                        measureText();
+                    }
+                }
+            }
+        }
+
         // We keep as 'para' the first source text, as it carries
         // the text alignment to use with all added lines.
         src_text_fragment_t * para = &m_pbuffer->srctext[start];
@@ -4818,6 +4936,169 @@ public:
                         if ( i==m_length-1 ) {
                             lastNormalWrap = i;
                         }
+                        continue;
+                    }
+                    if ( m_charindex[i] == INITIAL_LETTER_CHAR_INDEX ) {
+                        src_text_fragment_t * src = m_srcs[i];
+                        // Always recompute initial-letter metrics and re-add its float footprint
+                        // during formatting. This avoids reusing stale dimensions across reflows,
+                        // which can cause intermittent overlaps.
+                        ltext_initial_letter_t * il = (ltext_initial_letter_t *)src->custom_object;
+                        if ( il && il->font && il->text && il->len > 0 ) {
+                            int base_h = m_pbuffer->strut_height;
+                            if ( base_h <= 0 )
+                                base_h = src->interval > 0 ? src->interval : il->font->getHeight();
+                            int n = il->n_lines > 0 ? il->n_lines : 1;
+                            int m = il->sink_lines > 0 ? il->sink_lines : n;
+                            if ( m > n )
+                                m = n;
+
+                                // Scale the initial-letter glyph by selecting a bigger font so that
+                                // its height roughly matches n * base_h.
+                                // This is a best-effort approximation: it does not attempt to match
+                                // CSS inline box metrics precisely, but should provide the expected
+                                // visual "drop cap" effect.
+                                auto getCapHeight = [](LVFont * fnt) -> int {
+                                    if ( !fnt )
+                                        return 0;
+                                    LVFont::glyph_info_t g;
+                                    if ( fnt->getGlyphInfo((lUInt32)'H', &g, 0) ) {
+                                        // originY: distance from baseline to glyph top
+                                        if ( g.originY > 0 )
+                                            return (int)g.originY;
+                                    }
+                                    return fnt->getBaseline();
+                                };
+
+                                // 'src' is an object fragment: src->t.font is not reliable.
+                                // Try to find a safe base font from the paragraph (first non-object fragment).
+                                LVFont * base_font = NULL;
+                                if ( para && !(para->flags & LTEXT_SRC_IS_OBJECT) ) {
+                                    base_font = (LVFont *)para->t.font;
+                                }
+                                if ( !base_font ) {
+                                    for ( int si=start; si<end; si++ ) {
+                                        src_text_fragment_t * s = &m_pbuffer->srctext[si];
+                                        if ( !(s->flags & LTEXT_SRC_IS_OBJECT) && s->t.font ) {
+                                            base_font = (LVFont *)s->t.font;
+                                            break;
+                                        }
+                                    }
+                                }
+                                int base_cap = getCapHeight(base_font ? base_font : il->font);
+                                int orig_cap = getCapHeight(il->font);
+                                int target_cap = (n - 1) * base_h + base_cap;
+                                if ( orig_cap > 0 && target_cap > 0 && target_cap != orig_cap ) {
+                                    int orig_size = il->font->getSize();
+                                    int new_size = (orig_size * target_cap + orig_cap/2) / orig_cap;
+                                    if ( new_size < 1 )
+                                        new_size = 1;
+                                    // Refine size a bit to better match the requested target cap height
+                                    for ( int iter=0; iter<2; iter++ ) {
+                                        LVFontRef newFont = fontMan->GetFont(
+                                            new_size,
+                                            il->font->getWeight(),
+                                            il->font->getItalic() ? true : false,
+                                            il->font->getFontFamily(),
+                                            il->font->getTypeFace(),
+                                            0, -1, false);
+                                        if ( newFont.isNull() )
+                                            break;
+                                        int got_cap = getCapHeight(newFont.get());
+                                        if ( got_cap <= 0 )
+                                            break;
+                                        int adj_size = (new_size * target_cap + got_cap/2) / got_cap;
+                                        if ( adj_size == new_size ) {
+                                            if ( il->font )
+                                                il->font->Release();
+                                            il->font = newFont.get();
+                                            il->font->AddRef();
+                                            break;
+                                        }
+                                        new_size = adj_size;
+                                        if ( iter == 1 ) {
+                                            if ( il->font )
+                                                il->font->Release();
+                                            il->font = newFont.get();
+                                            il->font->AddRef();
+                                        }
+                                    }
+                                }
+
+                                il->height = (lUInt32)(n * base_h);
+                                // Compute a robust visual width from the actual rendered ink bounds.
+                                // This accounts for hinting/shaping/kerning and any raster overhang,
+                                // and is more reliable than advance width or per-glyph metrics.
+                                int visual_w = (int)il->font->getTextWidth(il->text, il->len, src->lang_cfg);
+                                if ( il->len > 0 ) {
+                                    LVInkMeasurementDrawBuf ink(false, true);
+                                    lUInt32 drawFlags = 0;
+                                    // Draw at an arbitrary baseline: other code uses y - font->getBaseline().
+                                    // We set y so that baseline is at y=0.
+                                    int x0 = 0;
+                                    int y0 = - il->font->getBaseline();
+                                    il->font->DrawTextString(
+                                        &ink,
+                                        x0,
+                                        y0,
+                                        il->text,
+                                        il->len,
+                                        '?',
+                                        NULL,
+                                        false,
+                                        src->lang_cfg,
+                                        drawFlags,
+                                        src->letter_spacing,
+                                        -1
+                                    );
+                                    lvRect r;
+                                    if ( ink.getInkArea(r) ) {
+                                        int ink_w = r.right - r.left;
+                                        if ( ink_w > visual_w )
+                                            visual_w = ink_w;
+                                    }
+                                }
+                                if ( visual_w < 0 )
+                                    visual_w = 0;
+                                // Add a tiny padding so wrapping won't get too tight and
+                                // allow glyph rasterization/rounding to leak into text.
+                                visual_w += 2;
+                                il->width = (lUInt16)visual_w;
+                                // The line start x used later by addLine() includes both the current
+                                // logical indent (x) and the shift induced by left floats at m_y.
+                                // The embedded-float footprint must use the same coordinate space,
+                                // otherwise text can overlap the initial-letter when the line does not
+                                // start at x=0 (e.g. text-indent, floats, RTL handling).
+                                int line_x = m_para_dir_is_rtl ? getCurrentLineX() : (x + getCurrentLineX());
+                                il->x = line_x;
+                                // Position so the baseline of the initial-letter aligns with the baseline
+                                // of the nth line. This matches the user's expectation of aligning the
+                                // bottom of "normal" letters (H/X/Н/Х/h/k...) which sit on the baseline.
+                                int wanted_baseline_y = m_y + (n - 1) * base_h + m_pbuffer->strut_baseline;
+                                il->y = wanted_baseline_y - m * base_h - m_pbuffer->strut_baseline;
+
+                                embedded_float_t * flt = lvtextAddEmbeddedFloat( m_pbuffer );
+                                flt->srctext = src;
+                                flt->x = il->x;
+                                // The float is used for text wrapping: it must span the first n lines
+                                // starting at the top of the first line, even if the glyph is drawn
+                                // slightly above due to baseline alignment.
+                                flt->y = m_y;
+                                flt->width = il->width;
+                                flt->height = n * base_h;
+                                flt->inward_margin = 0;
+                                flt->clear = css_c_none;
+                                flt->is_right = false;
+                                flt->to_position = false;
+
+                                // Like for regular floats, update the current line max width now that
+                                // we have introduced a left-side footprint. Not doing so may let the
+                                // line builder consider too much text to fit, and later squeeze spaces
+                                // aggressively or even let text overlap the drop cap.
+                                maxWidth = getCurrentLineWidth();
+                        }
+                        if ( i==m_length-1 )
+                            lastNormalWrap = i;
                         continue;
                     }
                     if ( m_charindex[i] == INLINEBOX_CHAR_INDEX && firstInlineBoxPos < 0 ) {
@@ -5326,6 +5607,18 @@ public:
                 }
             }
             #endif
+
+            // After the first emitted line, disable ::first-line overlay for the rest of the paragraph.
+            // We keep it only for chars already emitted on the first line.
+            if ( firstLineOverlayActive ) {
+                // 'pos' now points to the first char of the next line (after possible hyphen duplication).
+                // Restore base_srcs for remaining chars, and recompute widths.
+                for ( int i=pos; i<m_length; i++ ) {
+                    m_srcs[i] = base_srcs[i];
+                }
+                firstLineOverlayActive = false;
+                measureText();
+            }
         }
     }
 
@@ -5435,6 +5728,14 @@ public:
         int i;
 
         int srctextlen = m_pbuffer->srctextlen;
+        // Reset per-format processing flags, as this formatter may be reused and
+        // we need to deterministically rebuild embedded floats each time.
+        // Reset DONE flag for float objects so re-formatting always triggers a fresh float creation.
+        for ( i=0; i<srctextlen; i++ ) {
+            if ( m_pbuffer->srctext[i].flags & LTEXT_SRC_IS_OBJECT ) {
+                m_pbuffer->srctext[i].o.objflags &= ~(LTEXT_OBJECT_IS_FLOAT_DONE);
+            }
+        }
         int clear_after_last_flag = 0;
         if ( srctextlen>0 && (m_pbuffer->srctext[srctextlen-1].flags & LTEXT_SRC_IS_CLEAR_LAST) ) {
             // Ignorable source line added to carry a last <br clear=>.
@@ -5629,16 +5930,37 @@ lUInt32 LFormattedText::Format(lUInt16 width, lUInt16 page_height, int para_dire
 
     lUInt32 h = formatter.format();
 
-    if ( float_footprint && float_footprint->no_clear_own_floats ) {
-        // If we did not finalize/clear our embedded floats, forward
-        // them to FlowState so it can ensure layout around them of
-        // other block or final nodes.
+    if ( float_footprint ) {
+        // Forward some of our embedded floats to FlowState so it can ensure layout
+        // around them of other block or final nodes.
+        //
+        // This is needed not only when DO_NOT_CLEAR_OWN_FLOATS is in effect, but also
+        // for initial-letter drop caps: their float footprint must affect following
+        // sibling blocks (e.g. next paragraphs) as long as they span the current y.
         for (int i=0; i<m_pbuffer->floatcount; i++) {
             embedded_float_t * flt = m_pbuffer->floats[i];
             if (flt->srctext == NULL) // ignore outer floats given to us by flow
                 continue;
-            float_footprint->forwardOverflowingFloat(flt->x, flt->y, flt->width, flt->height,
-                                        flt->is_right, (ldomNode *)flt->srctext->object);
+
+            bool should_forward = float_footprint->no_clear_own_floats;
+            ldomNode * node = (ldomNode *)flt->srctext->object;
+            if ( flt->srctext->flags & LTEXT_SRC_IS_OBJECT ) {
+                if ( flt->srctext->o.objflags & LTEXT_OBJECT_IS_INITIAL_LETTER ) {
+                    // initial-letter should affect following sibling blocks: always forward it.
+                    should_forward = true;
+                    // lvtextAddSourceObject() sets srctext->object to il->node, so node is already correct.
+                    // But if it isn't for some reason, try to recover it from custom_object.
+                    if ( !node ) {
+                        ltext_initial_letter_t * il = (ltext_initial_letter_t *)flt->srctext->custom_object;
+                        if ( il && il->node )
+                            node = il->node;
+                    }
+                }
+            }
+            if ( should_forward && node ) {
+                float_footprint->forwardOverflowingFloat(flt->x, flt->y, flt->width, flt->height,
+                                            flt->is_right, node);
+            }
         }
     }
 
@@ -5868,6 +6190,57 @@ void LFormattedText::Draw( LVDrawBuf * buf, int x, int y, ldomMarkedRangeList * 
     // inlineBoxes: we'll do that when dealing with the first of these if any.
     ldomMarkedRangeList * absmarks = new ldomMarkedRangeList();
     bool absmarks_update_needed = marks!=NULL && marks->length()>0;
+
+    // Draw initial-letter objects (if any) before lines, so they can overlap above first line.
+    for (int si=0; si<m_pbuffer->srctextlen; si++) {
+        src_text_fragment_t * src = &m_pbuffer->srctext[si];
+        if ( (src->flags & LTEXT_SRC_IS_OBJECT) && (src->o.objflags & LTEXT_OBJECT_IS_INITIAL_LETTER) ) {
+            ltext_initial_letter_t * il = (ltext_initial_letter_t *)src->custom_object;
+            if ( il && il->font && il->text && il->len > 0 ) {
+                int base_h = m_pbuffer->strut_height;
+                if ( base_h <= 0 )
+                    base_h = src->interval > 0 ? src->interval : il->font->getHeight();
+                int baseline_y = il->y + il->sink_lines * base_h + m_pbuffer->strut_baseline;
+                int x0 = x + il->x;
+                int y0 = y + baseline_y - il->font->getBaseline();
+                lUInt32 oldColor = buf->GetTextColor();
+                lUInt32 oldBgColor = buf->GetBackgroundColor();
+                lUInt32 cl = src->color;
+                lUInt32 bgcl = src->bgcolor;
+                if ( LTEXT_COLOR_IS_RESERVED(cl) ) {
+                    if ( cl == LTEXT_COLOR_TRANSPARENT ) {
+                        continue;
+                    }
+                }
+                else {
+                    buf->SetTextColor( cl );
+                }
+                if ( !LTEXT_COLOR_IS_RESERVED(bgcl) )
+                    buf->SetBackgroundColor( bgcl );
+
+                il->font->DrawTextString(
+                    buf,
+                    x0,
+                    y0,
+                    il->text,
+                    il->len,
+                    '?',
+                    NULL,
+                    false,
+                    src->lang_cfg,
+                    0,
+                    src->letter_spacing,
+                    il->width,
+                    0,
+                    0, 0);
+
+                if ( !LTEXT_COLOR_IS_RESERVED(cl) )
+                    buf->SetTextColor( oldColor );
+                if ( !LTEXT_COLOR_IS_RESERVED(bgcl) )
+                    buf->SetBackgroundColor( oldBgColor );
+            }
+        }
+    }
 
     // printf("x/y: %d/%d clip.top/bottom: %d %d\n", x, y, clip.top, clip.bottom);
     // When drawing a paragraph that spans 3 pages, we may get:
@@ -6393,6 +6766,10 @@ void LFormattedText::Draw( LVDrawBuf * buf, int x, int y, ldomMarkedRangeList * 
             // or real outer floats not to be drawn by us)
             continue;
         }
+        if ( (flt->srctext->flags & LTEXT_SRC_IS_OBJECT) && (flt->srctext->o.objflags & LTEXT_OBJECT_IS_INITIAL_LETTER) ) {
+            // Initial-letter occupancy float: it is drawn separately (as glyphs), not via DrawDocument().
+            continue;
+        }
         ldomNode * node = (ldomNode *) flt->srctext->object;
 
         // Only some part of this float needs to be in the clip area.
@@ -6423,3 +6800,4 @@ void LFormattedText::Draw( LVDrawBuf * buf, int x, int y, ldomMarkedRangeList * 
 }
 
 #endif
+
